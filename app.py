@@ -108,32 +108,32 @@ default_p3_en = ""
 default_p3_zh = ""
 
 if template == "邊緣運算光學瑕疵檢測":
-    default_title = "基於邊緣運算之即時影像瑕疵檢測系統"[cite: 1]
-    default_ipc = "G06T 7/00, G01N 21/88"[cite: 1]
-    default_cpc = "G06V 10/00"[cite: 1]
-    default_p1_name = "Target: 瑕疵檢測"[cite: 1]
-    default_p1_en = "defect detection, flaw inspection, surface anomaly"[cite: 1]
-    default_p1_zh = "瑕疵檢測, 缺陷檢驗, 表面異常"[cite: 1]
-    default_p2_name = "Mechanism: 邊緣運算與視覺推論"[cite: 1]
-    default_p2_en = "edge computing, neural network, real-time inferenc*"[cite: 1]
-    default_p2_zh = "邊緣運算, 神經網絡, 即時推論, 深度學習"[cite: 1]
-    default_p3_name = "Effect: 低延遲與高精度"[cite: 1]
-    default_p3_en = "low latency, high throughput, false positive reduction"[cite: 1]
-    default_p3_zh = "低延遲, 降低誤判, 即時處理"[cite: 1]
+    default_title = "基於邊緣運算之即時影像瑕疵檢測系統"
+    default_ipc = "G06T 7/00, G01N 21/88"
+    default_cpc = "G06V 10/00"
+    default_p1_name = "Target: 瑕疵檢測"
+    default_p1_en = "defect detection, flaw inspection, surface anomaly"
+    default_p1_zh = "瑕疵檢測, 缺陷檢驗, 表面異常"
+    default_p2_name = "Mechanism: 邊緣運算與視覺推論"
+    default_p2_en = "edge computing, neural network, real-time inferenc*"
+    default_p2_zh = "邊緣運算, 神經網絡, 即時推論, 深度學習"
+    default_p3_name = "Effect: 低延遲與高精度"
+    default_p3_en = "low latency, high throughput, false positive reduction"
+    default_p3_zh = "低延遲, 降低誤判, 即時處理"
 
 elif template == "無鏈條齒輪箱無段變速花轂":
-    default_title = "無鏈條傳動之齒輪箱無段變速自行車花轂"[cite: 2]
-    default_ipc = "B62M 17/00, B62M 11/16, F16H 15/52"[cite: 2]
+    default_title = "無鏈條傳動之齒輪箱無段變速自行車花轂"
+    default_ipc = "B62M 17/00, B62M 11/16, F16H 15/52"
     default_cpc = ""
-    default_p1_name = "Target: 自行車與花轂"[cite: 2]
-    default_p1_en = "bicycle, bike, bicycle hub, wheel hub"[cite: 2]
-    default_p1_zh = "自行車, 腳踏車, 車轂, 花轂, 輪轂"[cite: 2]
-    default_p2_name = "Mechanism: 無鏈條傳動與齒輪箱"[cite: 2]
-    default_p2_en = "chainless, shaft drive, transmission shaft, gearbox, bevel gear"[cite: 2]
-    default_p2_zh = "無鏈, 軸傳動, 傳動軸, 齒輪箱, 傘齒輪"[cite: 2]
-    default_p3_name = "Mechanism: 無段變速 (CVT)"[cite: 2]
-    default_p3_en = "continuously variable, CVT, infinitely variable, friction drive, traction drive"[cite: 2]
-    default_p3_zh = "無段變速, 無級變速, 摩擦傳動, 球體傳動"[cite: 2]
+    default_p1_name = "Target: 自行車與花轂"
+    default_p1_en = "bicycle, bike, bicycle hub, wheel hub"
+    default_p1_zh = "自行車, 腳踏車, 車轂, 花轂, 輪轂"
+    default_p2_name = "Mechanism: 無鏈條傳動與齒輪箱"
+    default_p2_en = "chainless, shaft drive, transmission shaft, gearbox, bevel gear"
+    default_p2_zh = "無鏈, 軸傳動, 傳動軸, 齒輪箱, 傘齒輪"
+    default_p3_name = "Mechanism: 無段變速 (CVT)"
+    default_p3_en = "continuously variable, CVT, infinitely variable, friction drive, traction drive"
+    default_p3_zh = "無段變速, 無級變速, 摩擦傳動, 球體傳動"
 
 # 表單輸入
 with st.container():
