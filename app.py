@@ -94,11 +94,11 @@ class PatentSearchBuilder:
 
         return formatted_query
 
-    def generate_report_text(self, claim_chart_df: pd.DataFrame = None) -> str:
+    def generate_report_text(self, claim_chart_df: pd.DataFrame = None, prior_art_data: dict = None) -> str:
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         lines = [
             "=" * 85,
-            f"專利檢索與技術特徵分析報告 (含 Claims 檢核表與線上編輯比對矩陣)",
+            f"專利檢索與技術特徵分析報告 (含 Claims 檢核表、比對矩陣與前案附錄)",
             f"產出時間：{now}",
             "=" * 85,
             f"\n【一、發明標的與分類設定】",
@@ -144,6 +144,30 @@ class PatentSearchBuilder:
             f"2. 進步性差異點（Distinguishing Features）：標註出哪一個 Element 具備非顯而易知性之技術突破。",
             "=" * 85
         ])
+
+        # 附錄：爬取之引證前案原文
+        lines.extend([
+            f"\n【六、引證前案原文摘錄（附錄 Appendix）】",
+            "=" * 85,
+        ])
+
+        if prior_art_data:
+            lines.extend([
+                f"專利號碼：{prior_art_data.get('patent_no', '未知')}",
+                f"專利名稱：{prior_art_data.get('title', '未知')}",
+                f"線上來源：{prior_art_data.get('url', '未知')}",
+                f"\n--- 說明書摘要 (Abstract) ---",
+                f"{prior_art_data.get('abstract', '無摘要內容')}",
+                f"\n--- 申請專利範圍原文 (Claims) ---",
+                f"{prior_art_data.get('claims', '無 Claims 內容')}",
+                "=" * 85
+            ])
+        else:
+            lines.extend([
+                "（本次分析未執行線上前案專利爬取，或尚未載入引證專利原文資料）",
+                "=" * 85
+            ])
+
         return "\n".join(lines)
 
 # ==============================================================================
@@ -708,7 +732,12 @@ with tab_patent:
 
         google_query = builder.to_google_patents_query()
         gpss_query = builder.to_gpss_query()
-        report_text = builder.generate_report_text(claim_chart_df=edited_df)
+        
+        # 將最近爬取的前案資料傳入產生器，自動加入報告第六章節 (附錄)
+        report_text = builder.generate_report_text(
+            claim_chart_df=edited_df,
+            prior_art_data=st.session_state.get("last_fetched_patent")
+        )
 
         st.subheader("📋 產出結果")
         col_res1, col_res2 = st.columns(2)
@@ -734,9 +763,26 @@ with tab_patent:
 
         col_dl1, col_dl2 = st.columns(2)
         with col_dl1:
-            st.download_button("📥 下載完整檢索分析報告 (.txt)", data=report_text, file_name=f"patent_analysis_{time_str}.txt", mime="text/plain", type="primary", use_container_width=True)
+            st.download_button(
+                "📥 下載完整檢索分析報告 (.txt)",
+                data=report_text,
+                file_name=f"patent_analysis_{time_str}.txt",
+                mime="text/plain",
+                type="primary",
+                use_container_width=True
+            )
+            st.caption("已包含：三支柱、檢索式、Claims 檢核表、比對矩陣，以及【附錄：引證前案原文摘錄】。")
+
         with col_dl2:
-            st.download_button("📊 下載前案比對矩陣 (.csv)", data=csv_bytes, file_name=f"claim_chart_{time_str}.csv", mime="text/csv", type="secondary", use_container_width=True)
+            st.download_button(
+                "📊 下載前案比對矩陣 (.csv)",
+                data=csv_bytes,
+                file_name=f"claim_chart_{time_str}.csv",
+                mime="text/csv",
+                type="secondary",
+                use_container_width=True
+            )
+            st.caption("格式：標準 UTF-8 BOM CSV，適合 Excel / 試算表直接編輯與建檔。")
 
 # ==============================================================================
 # TAB 2: 商標權模組
