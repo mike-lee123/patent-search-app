@@ -366,15 +366,20 @@ def generate_oa_response_with_gemini(api_key: str, law_article: str, target_name
     return generate_with_fallback(client, prompt, as_json=False)
 
 # ==============================================================================
-# 四、 商標圖樣繪製核心邏輯 (支援上傳 Logo 圖文合成，符合 TIPO 規範)
+# 四、 商標圖樣繪製核心邏輯 (支援多行自由換行、對齊方式與行距微調)
 # ==============================================================================
 def create_tipo_trademark_bytes(
     text: str,
-    layout: str = "純文字：單行水平置中",
-    font_size: int = 76,
+    layout: str = "純文字模式",
+    font_size: int = 68,
+    text_align: str = "置中對齊",
+    line_spacing_ratio: float = 0.35,
     logo_file=None
 ) -> bytes:
-    """產生符合 TIPO 電子送件 8x8 cm 300DPI (945x945 px) 規格之 JPEG bytes"""
+    """
+    產生符合 TIPO 電子送件 8x8 cm 300DPI (945x945 px) 規格之 JPEG bytes。
+    支援多行文本、自訂靠左/置中/靠右對齊、自訂行距，以及 Logo 圖文合成。
+    """
     dpi = 300
     cm_to_inch = 2.54
     width_px = int((8.0 / cm_to_inch) * dpi)
@@ -402,6 +407,27 @@ def create_tipo_trademark_bytes(
     if font is None:
         font = ImageFont.load_default()
 
+    # 處理文字分行與維度量測
+    lines = [line.strip() for line in text.strip().split("\n") if line.strip()]
+    if not lines:
+        lines = [""]
+
+    line_bboxes = []
+    line_widths = []
+    line_heights = []
+    for line in lines:
+        bbox = draw.textbbox((0, 0), line, font=font)
+        lw = bbox[2] - bbox[0]
+        lh = bbox[3] - bbox[1]
+        line_bboxes.append(bbox)
+        line_widths.append(lw)
+        line_heights.append(lh)
+
+    line_spacing_px = int(font_size * line_spacing_ratio)
+    total_text_h = sum(line_heights) + line_spacing_px * (len(lines) - 1)
+    max_line_w = max(line_widths) if line_widths else 0
+
+    # 處理 Logo 圖檔
     logo_img = None
     if logo_file is not None:
         try:
@@ -415,8 +441,27 @@ def create_tipo_trademark_bytes(
         except Exception:
             logo_img = None
 
+    def draw_multiline_block(start_top_y: int, block_center_x: int, block_w: int):
+        """依據指定對齊方式繪製多行文字"""
+        cur_y = start_top_y
+        for i, line in enumerate(lines):
+            lw = line_widths[i]
+            lh = line_heights[i]
+            bbox = line_bboxes[i]
+
+            if text_align == "靠左對齊":
+                tx = block_center_x - (block_w // 2) - bbox[0]
+            elif text_align == "靠右對齊":
+                tx = block_center_x + (block_w // 2) - lw - bbox[0]
+            else:  # 置中對齊
+                tx = block_center_x - (lw // 2) - bbox[0]
+
+            draw.text((tx, cur_y - bbox[1]), line, font=font, fill=(0, 0, 0))
+            cur_y += lh + line_spacing_px
+
+    # 排版繪製
     if logo_img and layout == "複合商標：上圖下文":
-        target_logo_h = int(height_px * 0.45)
+        target_logo_h = int(height_px * 0.42)
         aspect = logo_img.width / logo_img.height
         new_w = int(target_logo_h * aspect)
         if new_w > int(width_px * 0.75):
@@ -424,20 +469,15 @@ def create_tipo_trademark_bytes(
             target_logo_h = int(new_w / aspect)
         resized_logo = logo_img.resize((new_w, target_logo_h), Image.Resampling.LANCZOS)
 
-        bbox = draw.textbbox((0, 0), text, font=font)
-        text_w = bbox[2] - bbox[0]
-        text_h = bbox[3] - bbox[1]
-
-        spacing = int(height_px * 0.05)
-        total_block_h = target_logo_h + spacing + text_h
+        spacing = int(height_px * 0.04)
+        total_block_h = target_logo_h + spacing + total_text_h
         start_y = (height_px - total_block_h) // 2
 
         logo_x = (width_px - new_w) // 2
         canvas.paste(resized_logo, (logo_x, start_y))
 
-        text_x = (width_px - text_w) // 2 - bbox[0]
-        text_y = start_y + target_logo_h + spacing - bbox[1]
-        draw.text((text_x, text_y), text, font=font, fill=(0, 0, 0))
+        text_start_y = start_y + target_logo_h + spacing
+        draw_multiline_block(text_start_y, width_px // 2, max_line_w)
 
     elif logo_img and layout == "複合商標：左圖右文":
         target_logo_w = int(width_px * 0.35)
@@ -448,43 +488,21 @@ def create_tipo_trademark_bytes(
             target_logo_w = int(new_h / aspect)
         resized_logo = logo_img.resize((target_logo_w, new_h), Image.Resampling.LANCZOS)
 
-        bbox = draw.textbbox((0, 0), text, font=font)
-        text_w = bbox[2] - bbox[0]
-        text_h = bbox[3] - bbox[1]
-
         spacing = int(width_px * 0.04)
-        total_block_w = target_logo_w + spacing + text_w
+        total_block_w = target_logo_w + spacing + max_line_w
         start_x = (width_px - total_block_w) // 2
 
         logo_y = (height_px - new_h) // 2
         canvas.paste(resized_logo, (start_x, logo_y))
 
-        text_x = start_x + target_logo_w + spacing - bbox[0]
-        text_y = (height_px - text_h) // 2 - bbox[1]
-        draw.text((text_x, text_y), text, font=font, fill=(0, 0, 0))
+        text_center_x = start_x + target_logo_w + spacing + (max_line_w // 2)
+        text_start_y = (height_px - total_text_h) // 2
+        draw_multiline_block(text_start_y, text_center_x, max_line_w)
 
-    elif layout == "純文字：上下雙行置中":
-        parts = text.strip().split(maxsplit=1)
-        line1 = parts[0] if len(parts) > 0 else ""
-        line2 = parts[1] if len(parts) > 1 else ""
-
-        bbox1 = draw.textbbox((0, 0), line1, font=font)
-        w1, h1 = bbox1[2] - bbox1[0], bbox1[3] - bbox1[1]
-
-        bbox2 = draw.textbbox((0, 0), line2, font=font)
-        w2, h2 = bbox2[2] - bbox2[0], bbox2[3] - bbox2[1]
-
-        line_spacing = int(font_size * 0.4)
-        total_h = h1 + h2 + line_spacing
-        start_y = (height_px - total_h) / 2
-        draw.text(((width_px - w1) / 2 - bbox1[0], start_y - bbox1[1]), line1, font=font, fill=(0, 0, 0))
-        draw.text(((width_px - w2) / 2 - bbox2[0], start_y + h1 + line_spacing - bbox2[1]), line2, font=font, fill=(0, 0, 0))
     else:
-        bbox = draw.textbbox((0, 0), text, font=font)
-        w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
-        x = (width_px - w) / 2 - bbox[0]
-        y = (height_px - h) / 2 - bbox[1]
-        draw.text((x, y), text, font=font, fill=(0, 0, 0))
+        # 純文字多行模式
+        start_y = (height_px - total_text_h) // 2
+        draw_multiline_block(start_y, width_px // 2, max_line_w)
 
     img_buffer = io.BytesIO()
     canvas.save(img_buffer, format="JPEG", dpi=(dpi, dpi), quality=95, subsampling=0)
@@ -1038,11 +1056,11 @@ with tab_patent:
             st.caption("格式：標準 UTF-8 BOM CSV，適合 Excel / 試算表直接編輯與建檔。")
 
 # ==============================================================================
-# TAB 2: 商標權模組 (整合 Logo 上傳圖文合成)
+# TAB 2: 商標權模組 (整合 Logo 上傳圖文合成、多行排版、對齊與行距控制)
 # ==============================================================================
 with tab_trademark:
     st.subheader("🏷️ 商標尼斯分類佈局與 TIPO 規範圖樣產生器")
-    st.markdown("評估商標識別性（Distinctiveness）、自動推薦第 09/42 類商品，並支援上傳 Logo 圖片合成符合智財局規範之申請圖檔。")
+    st.markdown("評估商標識別性（Distinctiveness）、自動推薦第 09/42 類商品，並支援上傳 Logo 圖片、多行自由換行、對齊排版與行距微調合成符合智財局規範之申請圖檔。")
 
     if "tm_analysis" not in st.session_state:
         st.session_state.tm_analysis = None
@@ -1083,28 +1101,48 @@ with tab_trademark:
             st.link_button("🇹🇼 開啟經濟部智慧局商標檢索首頁", "https://twtmsearch.tipo.gov.tw/", use_container_width=True)
 
     with col_tm2:
-        st.markdown("#### 2. TIPO 電子送件商標圖樣即時產生器 (含 Logo 合成)")
+        st.markdown("#### 2. TIPO 電子送件商標圖樣即時產生器 (含 Logo 合成與彈性換行)")
         st.caption("官方硬性規範：8×8 公分、300 DPI、945×945 px、純白底色、RGB 模式 JPEG。")
+
+        # 支援多行文字輸入
+        tm_multiline_text = st.text_area(
+            "圖樣文字內容（支援按下 Enter 自由換行）：",
+            value=tm_brand.strip() if tm_brand.strip() else "葉語\nSpectrIQ",
+            height=75,
+            help="可直接按 Enter 鍵進行多行換行排列，例如第一行英文、第二行中文。"
+        )
 
         uploaded_logo = st.file_uploader("選填：上傳品牌 Logo 圖檔 (支援 PNG、JPG，透明底自動填白)", type=["png", "jpg", "jpeg"])
 
-        layout_options = ["純文字：單行水平置中", "純文字：上下雙行置中"]
-        if uploaded_logo is not None:
-            layout_options = ["複合商標：上圖下文", "複合商標：左圖右文"] + layout_options
+        col_ctrl1, col_ctrl2 = st.columns(2)
+        with col_ctrl1:
+            layout_options = ["純文字模式"]
+            if uploaded_logo is not None:
+                layout_options = ["複合商標：上圖下文", "複合商標：左圖右文"] + layout_options
+            layout_choice = st.selectbox("圖樣排版方式：", layout_options)
 
-        layout_choice = st.selectbox("圖樣排版方式：", layout_options)
-        font_size_val = st.slider("文字字級大小 (Font Size)：", min_value=36, max_value=120, value=64 if uploaded_logo else 76, step=2)
+        with col_ctrl2:
+            align_choice = st.selectbox("文字對齊方式：", ["置中對齊", "靠左對齊", "靠右對齊"])
 
-        if tm_brand.strip():
+        col_slider1, col_slider2 = st.columns(2)
+        with col_slider1:
+            font_size_val = st.slider("文字字級大小 (Font Size)：", min_value=28, max_value=120, value=58 if uploaded_logo else 68, step=2)
+        with col_slider2:
+            spacing_ratio_val = st.slider("行距倍率 (Line Spacing)：", min_value=0.1, max_value=1.5, value=0.35, step=0.05, help="調整多行文字之間的上下間距比例。")
+
+        if tm_multiline_text.strip():
             img_bytes = create_tipo_trademark_bytes(
-                text=tm_brand.strip(),
+                text=tm_multiline_text.strip(),
                 layout=layout_choice,
                 font_size=font_size_val,
+                text_align=align_choice,
+                line_spacing_ratio=spacing_ratio_val,
                 logo_file=uploaded_logo
             )
             st.image(img_bytes, caption="📸 圖樣預覽 (8x8 cm @ 300 DPI 標準白底)", width=320)
 
-            clean_filename = f"trademark_{tm_brand.strip().replace(' ', '_')}.jpg"
+            clean_first_line = re.sub(r'[\r\n\s]+', '_', tm_multiline_text.strip()[:20])
+            clean_filename = f"trademark_{clean_first_line}.jpg"
             st.download_button(
                 label="📥 下載標準商標圖樣檔 (.jpg)",
                 data=img_bytes,
@@ -1115,13 +1153,13 @@ with tab_trademark:
             )
             st.caption("💡 說明：此 JPG 圖檔已完全符合智慧局 E-filing 送件系統規格，可直接作為註冊圖樣上傳。")
         else:
-            st.warning("請先於左側輸入商標名稱以生成圖樣。")
+            st.warning("請先輸入商標文字以生成圖樣。")
 
 # ==============================================================================
 # TAB 3: 智財法規速查 ＆ AI 申復答辯理由草稿生成器
 # ==============================================================================
 with tab_laws:
-    st.subheader("⚖️️ 專利法與商標法關鍵條文速查指南")
+    st.subheader("⚖️ 專利法與商標法關鍵條文速查指南")
     st.markdown("快速檢索與參考台灣**《專利法》**與**《商標法》**核心條文、審查基準要點，並可由 **AI 一鍵模擬撰寫審查意見申復答辯書**。")
 
     col_filter1, col_filter2 = st.columns([1, 2])
@@ -1160,7 +1198,6 @@ with tab_laws:
     st.subheader("🤖 AI 智財局審查意見申復理由書產生器 (OA Response Generator)")
     st.caption("遭遇智慧財產局審查意見通知函（Office Action）核駁或異議爭議時，可依據引證案事實與抗辯要點，一鍵生成代理人規格之申復答辯理由書。")
 
-    # 範本快速預填切換
     oa_template_options = [
         "商標法第 30 條第 1 項第 10 款（商品非類似/不致混淆抗辯 - 例: 音箱 vs. 展示架）",
         "專利法第 22 條第 2 項（進步性核駁 / 容易思及完成）",
@@ -1171,7 +1208,6 @@ with tab_laws:
     ]
     oa_law = st.selectbox("選擇審查意見/爭議所適用的法定條款範本：", oa_template_options)
 
-    # 根據選取之範本自動準備預設內容
     if "商品非類似/不致混淆抗辯" in oa_law:
         default_oa_target = "本案「Lakis」音箱展示架 vs. 美商「Lakis」音箱 (揚聲器)"
         default_oa_grounds = (
