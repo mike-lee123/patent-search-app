@@ -489,7 +489,7 @@ def create_tipo_trademark_bytes(
         start_x = (width_px - total_block_w) // 2
 
         logo_y = (height_px - new_h) // 2
-        canvas.paste(resized_logo, (logo_x, logo_y))
+        canvas.paste(resized_logo, (start_x, logo_y))
 
         text_center_x = start_x + target_logo_w + spacing + (max_line_w // 2)
         text_start_y = (height_px - total_text_h) // 2
@@ -705,7 +705,9 @@ for k, v in default_keys.items():
 st.title("🛡️ 智慧財產權整合工作台 (專利 ＆ 商標)")
 st.markdown("結合 **Google Patents 邏輯檢索**、**專利號自動爬取對應**、**Claims 全要件比對矩陣**、**TIPO 規範圖樣生成** 與 **智財法規答辯生成器**。")
 
-# 側邊欄金鑰設定
+# ------------------------------------------------------------------------------
+# 側邊欄設定與操作手冊摺疊文件
+# ------------------------------------------------------------------------------
 st.sidebar.header("🔑 Gemini API 設定")
 secret_key = ""
 if "GEMINI_API_KEY" in st.secrets:
@@ -720,9 +722,35 @@ user_api_key = st.sidebar.text_input(
     help="可在 Google AI Studio (aistudio.google.com) 免費申請 API Key。"
 )
 
+# 📖 側邊欄常駐展開式操作手冊
+with st.sidebar.expander("📖 操作手冊與使用說明", expanded=False):
+    st.markdown("""
+### 🚀 快速上手 SOP
+1. **API Key**：於上方輸入金鑰，供特徵拆解與答辯生成。
+2. **範本快填**：可點選下方「📁 專利技術範本」秒填測試資料。
+
+---
+### 📄 專利檢索與比對 SOP
+1. **AI 拆解**：輸入標的名稱，點擊「✨ Gemini AI 自動拆解」自動產生三支柱與 Claims。
+2. **爬取前案**：於第 3 區塊輸入公開號（如 `EP3739504A1` 或 `US11373399B2`），點擊「📥 爬取並自動填入」。
+3. **進步性答辯**：當第 4 區塊表格有 `NO (不符/差異點)`，點擊按鈕一鍵生成專利法第22條答辯書。
+4. **匯出報告**：點擊底部「🚀 生成檢索式」即可複製或下載 txt/csv。
+
+---
+### 🏷️ 商標圖樣與佈局 SOP
+1. **評估**：輸入商標與商品說明，AI 分析識別性並推薦尼斯分類。
+2. **圖樣合成**：支援輸入多行文字（支援 Enter 換行）、上傳 Logo 圖檔、自訂對齊與行距。
+3. **下載規範檔**：產出 8×8 cm @ 300 DPI 標準白底 JPEG。
+
+---
+### ⚖️ 智財法規與申復 SOP
+1. **條文速查**：依關鍵字或類別即時過濾法條與審查基準。
+2. **OA 答辯**：選擇法定條款範本（支援商品非類似抗辯），一鍵起草代理人規格答辯書。
+    """)
+
 tab_patent, tab_trademark, tab_laws = st.tabs([
     "📄 專利檢索與 Claims 比對矩陣",
-    "🏷️ 商標權佈局與圖樣生成器",
+    "🏷️️ 商標權佈局與圖樣生成器",
     "⚖️ 智財法規速查 (專利法 ＆ 商標法)"
 ])
 
@@ -805,7 +833,7 @@ with tab_patent:
                 try:
                     ai_res = analyze_patent_with_gemini(user_api_key.strip(), target_title.strip())
 
-                    # 【核心修正】：直接同步更新綁定到輸入框的所有 Session State Key！
+                    # 同步更新綁定到輸入框的所有 Session State Key
                     st.session_state["ipc_input_val"] = ai_res.get("ipc", "")
                     st.session_state["cpc_input_val"] = ai_res.get("cpc", "")
                     st.session_state["p1_n_val"] = ai_res.get("pillar_a_name", "Target: 應用標的")
