@@ -23,7 +23,7 @@ except ImportError:
     HAS_GENAI = False
 
 # ==============================================================================
-# 一、 核心資料結構與專利檢索邏輯 (已整合 Google Patents 扁平化修復)
+# 一、 核心資料結構與專利檢索邏輯 (已修正 Google Patents 官方標準語法)
 # ==============================================================================
 @dataclass
 class TechnicalPillar:
@@ -33,7 +33,7 @@ class TechnicalPillar:
     zh_keywords: List[str] = field(default_factory=list)
 
 class PatentSearchBuilder:
-    """專利檢索邏輯式建造器 (含 Google Patents 扁平化防禦)"""
+    """專利檢索邏輯式建造器 (含 Google Patents 扁平化防禦與官方分類號相容規範)"""
     def __init__(self, target_title: str):
         self.target_title = target_title
         self.ipc_classes: List[str] = []
@@ -59,24 +59,25 @@ class PatentSearchBuilder:
         return self
 
     def to_google_patents_query(self) -> str:
-        """產生符合 Google Patents 規範之扁平化布林檢索式，杜絕巢狀過深錯誤"""
+        """產生符合 Google Patents 官方解析器標準之檢索式 (無重複前綴、無分號、單層扁平)"""
         pillar_blocks = []
         for p in self.pillars:
             if p.en_keywords:
-                selected_kws = p.en_keywords[:4]
+                # 取前 3 個核心單詞/短片語，避免布林運算過長或過度收斂
+                selected_kws = p.en_keywords[:3]
                 formatted = [f'"{kw}"' if " " in kw else kw for kw in selected_kws]
                 pillar_blocks.append(f"({' OR '.join(formatted)})")
 
         keyword_part = " AND ".join(pillar_blocks) if pillar_blocks else ""
 
+        # Google Patents 分類號標準格式：去除內部空格，直接以 OR 連接，不可在括號內逐項宣告 CPC=
         all_classes = self.cpc_classes or self.ipc_classes
         if all_classes:
             clean_classes = []
             for c in all_classes:
-                raw_c = re.sub(r'[\s/]+', '', c).strip().upper()
+                raw_c = re.sub(r'\s+', '', c).strip().upper()
                 if raw_c:
-                    norm_c = re.sub(r'\s+', '', c).strip()
-                    clean_classes.append(f"CPC={norm_c}")
+                    clean_classes.append(raw_c)
             
             if clean_classes:
                 classes_str = f"({' OR '.join(clean_classes)})"
@@ -557,7 +558,7 @@ def render_copy_button(text_to_copy: str, button_label: str = "📋 點擊複製
     components.html(html_code, height=50)
 
 # ==============================================================================
-# 六、 智財核心法規與法律範本資料庫 (含專利法、商標法、營業秘密法與化學配方專題)
+# 六、 智財核心法規與法律範本資料庫
 # ==============================================================================
 IP_LAWS_DB = [
     # 專利法核心
@@ -1364,7 +1365,7 @@ with tab_patent:
         st.subheader("📋 產出結果")
         col_res1, col_res2 = st.columns(2)
         with col_res1:
-            st.markdown("#### 🌐 Google Patents / Espacenet 檢索式 (扁平化防禦格式)")
+            st.markdown("#### 🌐 Google Patents / Espacenet 檢索式 (官方相容規範)")
             st.code(google_query if google_query else "（無有效檢索式）", language="text")
             if google_query.strip():
                 render_copy_button(google_query, "📋 快速複製 Google Patents 檢索式", button_id="copyGoogle")
@@ -1393,7 +1394,7 @@ with tab_patent:
                 type="primary",
                 use_container_width=True
             )
-            st.caption("已包含：三支柱、扁平化檢索式、Claims 檢核表、比對矩陣，以及【附錄：引證前案原文摘錄】。")
+            st.caption("已包含：三支柱、官方標準檢索式、Claims 檢核表、比對矩陣，以及【附錄：引證前案原文摘錄】。")
 
         with col_dl2:
             st.download_button(
