@@ -181,8 +181,8 @@ def fetch_patent_data_from_google(patent_no: str) -> dict:
     return {
         "patent_no": clean_pno,
         "title": title,
-        "abstract": abstract[:2000],
-        "claims": claims_text[:4000],
+        "abstract": abstract[:3000],
+        "claims": claims_text[:6000],
         "url": url
     }
 
@@ -196,13 +196,10 @@ CANDIDATE_MODELS = [
 ]
 
 def generate_with_fallback(client, prompt: str) -> str:
-    """
-    依序嘗試 CANDIDATE_MODELS 清單中的模型。
-    若遭遇 503 (負載過高) 或 429 (超量) 自動退避等待並切換備用模型。
-    """
+    """依序嘗試 CANDIDATE_MODELS 清單中的模型，遇 503/429 退避重試"""
     last_exception = None
     for model_name in CANDIDATE_MODELS:
-        for attempt in range(2):  # 每個模型嘗試最多 2 次
+        for attempt in range(2):
             try:
                 response = client.models.generate_content(
                     model=model_name,
@@ -216,13 +213,11 @@ def generate_with_fallback(client, prompt: str) -> str:
             except Exception as e:
                 last_exception = e
                 err_str = str(e)
-                # 判定是否為暫態高負載或頻率限制
                 is_transient = any(code in err_str for code in ["503", "429", "UNAVAILABLE", "RESOURCE_EXHAUSTED"])
                 if is_transient:
-                    time.sleep(2)  # 稍微退避
+                    time.sleep(2)
                     continue
                 else:
-                    # 其他錯誤（如 404/Invalid Argument）直接中斷切換下一模型
                     break
     raise last_exception if last_exception else Exception("所有備援模型皆無法連線，請稍後再試。")
 
@@ -478,6 +473,10 @@ with tab_patent:
             "claims": []
         }
 
+    # 紀錄最近爬取之專利原文
+    if "last_fetched_patent" not in st.session_state:
+        st.session_state.last_fetched_patent = None
+
     if template == "多光譜溫室作物病害早期偵測系統":
         st.session_state.form_data.update({
             "title": "多光譜溫室作物病害早期偵測系統",
@@ -601,7 +600,9 @@ with tab_patent:
 
     st.markdown("---")
 
-    # 引證前案自動爬取與比對
+    # ==========================================================================
+    # 3. 引證前案自動爬取與比對
+    # ==========================================================================
     st.subheader("3. 引證前案專利號爬取與自動比對 (Auto-fetch Prior Art)")
     st.caption("輸入引證案公開/公告號（支援 US、EP、WO、TW 等），自動自 Google Patents 爬取內容，並由 AI 比對填入下表指定的前案欄位。")
 
@@ -624,7 +625,7 @@ with tab_patent:
             with st.spinner(f"🌐 正在爬取 {target_pno.strip()} 並啟動多模型備援比對..."):
                 try:
                     p_data = fetch_patent_data_from_google(target_pno.strip())
-                    st.success(f"✅ 成功擷取專利：【{p_data['patent_no']}】{p_data['title']}")
+                    st.session_state.last_fetched_patent = p_data
 
                     curr_claims = st.session_state.form_data.get("claims", [])
                     if not curr_claims:
@@ -645,10 +646,31 @@ with tab_patent:
                                 row["差異/進步性說明"] = ai_mappings[idx].get("diff_note")
 
                     st.session_state.form_data["claims"] = curr_claims
+                    st.success(f"✅ 成功擷取專利：【{p_data['patent_no']}】{p_data['title']}，已完成對應比對！")
                     st.rerun()
 
                 except Exception as e:
                     st.error(f"爬取或比對失敗: {e}")
+
+    # 展開檢視爬取之專利原文 (摘要與 Claims)
+    if st.session_state.last_fetched_patent:
+        last_p = st.session_state.last_fetched_patent
+        with st.expander(f"📖 查看最近爬取之專利原文：【{last_p['patent_no']}】{last_p['title']}", expanded=True):
+            col_info1, col_info2 = st.columns([3, 1])
+            with col_info1:
+                st.markdown(f"**專利名稱**：{last_p['title']}")
+                st.markdown(f"**專利公開/公告號**：`{last_p['patent_no']}`")
+            with col_info2:
+                st.link_button("🌐 在 Google Patents 開啟原文", last_p["url"], use_container_width=True)
+
+            st.markdown("##### 📄 專利說明書摘要 (Abstract)")
+            st.info(last_p["abstract"] if last_p["abstract"] else "無摘要內容")
+
+            st.markdown("##### ⚖️ 申請專利範圍原文 (Claims)")
+            if last_p["claims"]:
+                st.code(last_p["claims"], language="text")
+            else:
+                st.warning("未自該專利頁面擷取到 Claims 條文。")
 
     st.markdown("---")
     st.subheader("4. 申請專利範圍全要件比對矩陣 (線上編輯)")
