@@ -489,7 +489,7 @@ def create_tipo_trademark_bytes(
         start_x = (width_px - total_block_w) // 2
 
         logo_y = (height_px - new_h) // 2
-        canvas.paste(resized_logo, (start_x, logo_y))
+        canvas.paste(resized_logo, (logo_x, logo_y))
 
         text_center_x = start_x + target_logo_w + spacing + (max_line_w // 2)
         text_start_y = (height_px - total_text_h) // 2
@@ -667,6 +667,139 @@ IP_LAWS_DB = [
     }
 ]
 
+# 操作手冊完整 Markdown 內容（供側邊欄預覽與下載）
+USER_MANUAL_MARKDOWN = """# 📖 智慧財產權整合工作台 操作手冊
+
+---
+
+## 🚀 準備作業：設定 API 金鑰
+1. 開啟工作台首頁，查看螢幕**左側側邊欄（Sidebar）**。
+2. 在 **「🔑 Gemini API 設定」** 欄位貼入您的 Google Gemini API Key。
+3. （可選）若本機有設定 `.streamlit/secrets.toml`，系統會自動載入，不需重複輸入。
+
+---
+
+## 模組一：📄 專利檢索與 Claims 比對矩陣
+
+### 步驟 1：發明標的與技術三支柱拆解
+* **方式 A：使用內建範本（最快）**
+  * 在左側側邊欄的 **「📁 專利技術範本」** 下拉選單中選取範本（例如：多光譜溫室系統、貴金屬電鍍光澤劑），系統會自動帶入標的名稱、IPC/CPC、三支柱關鍵字及 Claims 要件。
+* **方式 B：AI 自動拆解**
+  1. 輸入發明標的名稱（例如：`晶圓搬運機械手臂動態抑振控制系統`）。
+  2. 點擊 **「✨ Gemini AI 自動拆解」**。
+  3. 系統自動產出 IPC/CPC、三支柱（Target / Mechanism / Effect）中英文關鍵字與 Claim 1 要件。
+* **方式 C：手動編輯微調**
+  * 各欄位關鍵字請使用半形逗號 `,` 隔開，包含空格的英文片語會自動以雙引號保護。
+
+### 步驟 2：引證前案爬取與全要件比對 (Auto-fetch Prior Art)
+1. **輸入前案專利號**：填入公開號或公告號（例如：`EP3739504A1` 或 `US11373399B2`）。
+2. **選取填入欄位**：下拉選擇 `前案 D1 對應技術` 或 `前案 D2 對應技術`。
+3. **點擊「📥 爬取並自動填入」**：
+   * 系統自動爬取 Google Patents 摘要與 Claims 原文。
+   * AI 自動將前案構件對應至 Claim 1 各 Element，並更新符合性判定（YES / NO / 均等成立）。
+4. **檢視原文**：可在下方展開卡片中即時閱讀摘要與 Claims 原文。
+
+### 步驟 3：全要件矩陣線上編輯與進步性答辯
+1. 矩陣支援線上即時編輯構件描述、符合性判定與差異功效。
+2. **一鍵進步性申復**：當表格有判定為 `NO (不符/差異點)`，點擊 **「⚖️ 一鍵生成《專利法》第22條進步性申復理由」**，AI 自動提煉差異點起草申復書。
+
+### 步驟 4：匯出檢索式與完整分析報告
+1. 點擊 **「🚀 生成專利檢索式並整合比對報告」**。
+2. 可一鍵複製 Google Patents / 台灣 GPSS 檢索式，或直接跳轉 Google Patents 搜尋頁面。
+3. 可下載完整報告檔 (`.txt`) 或 Claims 比對矩陣試算表 (`.csv`)。
+
+---
+
+## 模組二：🏷️ 商標權佈局與圖樣生成器
+
+### 步驟 1：商標識別性與尼斯分類 AI 評估
+1. 輸入「擬申請商標文字」與「產品/技術描述」。
+2. 點擊 **「✨ 執行商標識別性與尼斯分類 AI 評估」**。
+3. 取得識別性等級（獨創/任意/暗示/說明）、推薦尼斯分類組群與 TIPO 檢索關鍵字。
+
+### 步驟 2：產生符合 TIPO 規範之商標圖檔 (含 Logo 合成)
+1. **多行文字**：文字框支援直接按下 Enter 自由換行。
+2. **Logo 上傳**：支援 PNG/JPG 圖檔，透明底自動填白。
+3. **版面控制**：支援純文字/上圖下文/左圖右文，具備靠左/置中/靠右對齊與行距倍率調整滑桿。
+4. **規格保證**：輸出符合官方 E-filing 規範之 8×8 cm @ 300 DPI（945×945 px）純白底色 JPEG。
+
+---
+
+## 模組三：⚖️ 智財法規速查 ＆ AI 申復答辯理由書產生器
+
+### 步驟 1：條文與審查實務速查
+* 依類別篩選專利法/商標法，或以關鍵字（進步性、混淆誤認、識別性）即時過濾核心條文與答辯要點。
+
+### 步驟 2：AI 申復答辯理由書產生器
+1. 選取法定條款範本（含：商品非類似/不致混淆抗辯、專利進步性核駁、新穎性核駁等）。
+2. 系統自動帶入專屬之爭點事實與實體論據。
+3. 點擊 **「✨ 產生申復答辯理由書草稿」**，產出符合官方格式之正式理由書，支援一鍵複製與 txt 下載。
+"""
+
+# 電鍍光澤劑進步性專用申復理由書全文
+OA_ELECTROPLATING_DOC = """專利申復理由書（草稿）
+
+案  號：第 [請填入申請案號] 號
+申 請 人：[請填入專利申請人/公司名稱]
+發明名稱：用於貴金屬電鍍之晶粒細化光澤添加劑組成物
+受 文 者：經濟部智慧財產局
+
+--------------------------------------------------------------------------------
+一、 案由與前言聲明
+--------------------------------------------------------------------------------
+本件專利申請案業經 貴局審查官惠示審查意見通知函，認本案申請專利範圍請求項第 1 項等技術特徵，為所屬技術領域中具有通常知識者結合引證案 D1 與引證案 D2 所能輕易置換思及完成，而有違反《專利法》第 22 條第 2 項（進步性）之虞。
+
+申請人深感審查官審查之辛勞，經詳加研析前揭核駁理由與引證文獻後，謹陳明：引證案 D1 與引證案 D2 實質上並未揭露本案請求項第 1 項所特定界定之「主光澤劑與輔助細化劑之重量比為 1:1 至 10:1」之關鍵吸附平衡技術特徵（Element 1C），更未教示或暗示該特定配比能誘發「陰極極化過電位負移 50 至 200 mV」並將晶粒強制細化至 80 nm 以下且杜絕脆化之突變性協同增效（Synergistic Effect）。本案確實非通常知識者依先前技術所能輕易完成，具備突出之技術特徵與顯著之功效增益，依法自具進步性。
+
+茲檢具實體法律與技術比對理由如后，懇請 貴局審查官明察並賜予核准審定。
+
+--------------------------------------------------------------------------------
+二、 審查基準法理依據
+--------------------------------------------------------------------------------
+按《專利法》第 22 條第 2 項規定，發明雖無同條第 1 項各款所列情事，但為其所屬技術領域中具有通常知識者依申請前之先前技術所能輕易完成時，仍不得依本法申請專利。
+
+次按 貴局頒布之《專利審查基準》第二篇第三章第 3.4 節「進步性之判斷」明載：
+1. 「不可事後諸葛（Avoid Hindsight Bias）」：判斷進步性時，審查人員不得於已知本發明內容之情況下，主觀推斷或重組先前技術元件。先前技術若未提供結合之「動機或啟示（Teaching, Suggestion, or Motivation）」，即不得任意將多份引證案拼湊以否定進步性。
+2. 「無法預期之技術功效（Unexpected Technical Effect）」：在數值範圍或成分配比之發明中，若發明限定之特定成分比例範圍，於臨界區間內產生了超越各成分單純功效相加、非通常知識者依既有理論所能預測之突變性增益或協同效果者，即應認定具備進步性。
+
+--------------------------------------------------------------------------------
+三、 爭點具體比對與實體答辯理由
+--------------------------------------------------------------------------------
+本案請求項第 1 項之核心技術要件與引證案 D1、D2 之全要件比對結果如下：
+
+（一） 引證案未曾揭露本案特定 1:1 至 10:1 之重量配比限制（Element 1C）
+1. 引證案 D1 之揭露極限：
+   引證案 D1 僅為一般有機添加劑之單純教示，其說明書通篇僅泛稱添加常規吡啶類衍生物作為光澤劑，並完全未限定該主光澤劑與含硫輔助成分之精確相互作用配比，實務上係由現場操作人員隨機視槽況目視補正，對配比動態平衡毫無實質教示。
+2. 引證案 D2 之技術阻礙（Teaching Away）：
+   引證案 D2 揭露之硫脲抑制體系，係採取極低量之微量抑制添加模式（其主添加劑與抑制劑之比例高達 1:20 以上）。引證案 D2 明白指出：若提高含硫添加劑之濃度至接近主光澤劑（如 1:1 至 1:10 之高濃度相對比值），將導致鍍層產生嚴重的共析脆化、內應力劇增與變色缺陷。
+3. 兩者結合無法導出本案特徵：
+   通常知識者參酌引證案 D2 之負面教示，理應竭力避免將兩者配比維持於 1:1 至 10:1 之高比例區間。因此，先前技術不僅缺乏將兩者以 1:1 至 10:1 配比結合之技術啟示，甚至存在強烈之反向教示。
+
+（二） 本案特定數值配比產生無法預期之「動態競爭吸附與微晶協同功效」
+本案發明人經反覆實驗突破性發現，當含氮芳香雜環/聚季銨鹽陽離子主光澤劑（成分 a）與含硫有機抑制劑（成分 b）之重量比被嚴格鎖定於 1:1 至 10:1 時，於陰極微觀雙電層（Helmholtz Layer）表面將引發不可預期的相乘作用：
+1. 陰極極化過電位大幅負移 50 至 200 mV：
+   單獨使用成分 (a)，電位負移量未達 20 mV；單獨使用成分 (b)，過電位雖有增長但極化曲線極不穩定，高電流密度區易發生析氫與燒焦。唯有當兩者維持於 1:1 至 10:1 之黃金配比時，陽離子季銨基與含硫硫醇/磺酸基團在陰極凸起處形成高密度的複合金屬錯合物吸附膜，促使過電位急遽負移 50～200 mV。
+2. 晶粒形核速率（Nucleation Rate）呈指數級躍升：
+   過電位之顯著負移，大幅提高了晶核生成能障，使貴金屬沉積機制由「平穩晶體長大」強制切換為「高密度連續均勻形核」。依據本案說明書實施例數據，本案鍍層晶粒尺寸被抑制於 80 奈米（nm）以下，表面粗糙度 Ra 降至 0.05 μm 以下，達到鏡面反射效果。
+3. 消除硫原子夾雜，杜絕鍍層脆化：
+   在 1:1 至 10:1 之交互作用下，成分 (a) 之立體阻礙效應調控了成分 (b) 的解離速率，徹底克服了先前技術（如引證案 D2）晶粒細化伴隨鍍層發脆的頑疾，使接點鍍層之打線結合力（Wire Bonding Pull Strength）提升 35% 以上，接觸阻抗維持低於 5 mΩ。
+
+上述顯著之物理化學性質突變，絕非由引證案 D1 或 D2 任何單一組分所能預期，係屬典型的協同增效作用（Synergistic Effect），完全符合專利審查基準判定具備進步性之要件。
+
+--------------------------------------------------------------------------------
+四、 結論與懇請事項
+--------------------------------------------------------------------------------
+綜上所陳，本案申請專利範圍請求項第 1 項所請之技術方案，其所特定之成分配合比（Element 1C）不僅未見於引證案 D1 與 D2，更具備反技術常規之獨創性，且客觀上產生了先前技術所無法達成之顯著技術功效增益，實質上完全具備《專利法》第 22 條第 2 項規定之進步性要件。
+
+懇請 貴局審查官明鍳上述事實與法理說明，惠予撤銷原核駁意見通知函之質疑，早日賜准本案專利，實感德便。
+
+謹呈
+經濟部智慧財產局 公鑒
+
+申請人：[請填入申請人/專利代理人簽章]
+日 期：中華民國 [請填入年/月/日]
+"""
+
 # ==============================================================================
 # 七、 Streamlit 介面與 Session State 同步管理 (100% 保證自動填入)
 # ==============================================================================
@@ -676,7 +809,6 @@ st.set_page_config(
     layout="wide"
 )
 
-# 初始化各個 Widget Key 狀態
 default_keys = {
     "patent_title_input": "",
     "ipc_input_val": "",
@@ -706,7 +838,7 @@ st.title("🛡️ 智慧財產權整合工作台 (專利 ＆ 商標)")
 st.markdown("結合 **Google Patents 邏輯檢索**、**專利號自動爬取對應**、**Claims 全要件比對矩陣**、**TIPO 規範圖樣生成** 與 **智財法規答辯生成器**。")
 
 # ------------------------------------------------------------------------------
-# 側邊欄設定與操作手冊摺疊文件
+# 側邊欄：API 設定、操作手冊常駐展開面板與手冊下載
 # ------------------------------------------------------------------------------
 st.sidebar.header("🔑 Gemini API 設定")
 secret_key = ""
@@ -724,33 +856,18 @@ user_api_key = st.sidebar.text_input(
 
 # 📖 側邊欄常駐展開式操作手冊
 with st.sidebar.expander("📖 操作手冊與使用說明", expanded=False):
-    st.markdown("""
-### 🚀 快速上手 SOP
-1. **API Key**：於上方輸入金鑰，供特徵拆解與答辯生成。
-2. **範本快填**：可點選下方「📁 專利技術範本」秒填測試資料。
-
----
-### 📄 專利檢索與比對 SOP
-1. **AI 拆解**：輸入標的名稱，點擊「✨ Gemini AI 自動拆解」自動產生三支柱與 Claims。
-2. **爬取前案**：於第 3 區塊輸入公開號（如 `EP3739504A1` 或 `US11373399B2`），點擊「📥 爬取並自動填入」。
-3. **進步性答辯**：當第 4 區塊表格有 `NO (不符/差異點)`，點擊按鈕一鍵生成專利法第22條答辯書。
-4. **匯出報告**：點擊底部「🚀 生成檢索式」即可複製或下載 txt/csv。
-
----
-### 🏷️ 商標圖樣與佈局 SOP
-1. **評估**：輸入商標與商品說明，AI 分析識別性並推薦尼斯分類。
-2. **圖樣合成**：支援輸入多行文字（支援 Enter 換行）、上傳 Logo 圖檔、自訂對齊與行距。
-3. **下載規範檔**：產出 8×8 cm @ 300 DPI 標準白底 JPEG。
-
----
-### ⚖️ 智財法規與申復 SOP
-1. **條文速查**：依關鍵字或類別即時過濾法條與審查基準。
-2. **OA 答辯**：選擇法定條款範本（支援商品非類似抗辯），一鍵起草代理人規格答辯書。
-    """)
+    st.markdown(USER_MANUAL_MARKDOWN)
+    st.download_button(
+        label="📥 下載操作手冊 (.md)",
+        data=USER_MANUAL_MARKDOWN,
+        file_name="IP_Workbench_User_Manual.md",
+        mime="text/markdown",
+        use_container_width=True
+    )
 
 tab_patent, tab_trademark, tab_laws = st.tabs([
     "📄 專利檢索與 Claims 比對矩陣",
-    "🏷️️ 商標權佈局與圖樣生成器",
+    "🏷️ 商標權佈局與圖樣生成器",
     "⚖️ 智財法規速查 (專利法 ＆ 商標法)"
 ])
 
@@ -782,6 +899,27 @@ with tab_patent:
                 {"要件編號": "Element 1C", "本案 Claim 1 技術要件": "一病斑早期預警神經網路模型，根據特徵化多光譜資訊預測前症狀潛伏病灶", "前案 D1 對應技術": "色差比對判定枯黃斑塊", "前案 D2 對應技術": "葉片病徵分類 CNN", "符合性判定": "NO (不符/差異點)", "差異/進步性說明": "本案能在葉片肉眼尚未顯性變色前 48 小時識別隱性病原感染"},
                 {"要件編號": "Element 1D", "本案 Claim 1 技術要件": "一環控連動介面，當接收預警訊號時觸發特定分區通風調節與精準噴灑", "前案 D1 對應技術": "警報訊息推播至使用者手機", "前案 D2 對應技術": "全區定時自動噴灌", "符合性判定": "YES (字面讀取)", "差異/進步性說明": "結合定位分區執行隔離防護之閉迴路控制"}
             ]
+        elif sel == "貴金屬電鍍晶粒細化光澤劑":
+            st.session_state["patent_title_input"] = "用於貴金屬電鍍之晶粒細化光澤添加劑組成物"
+            st.session_state["ipc_input_val"] = "C25D 3/46, C25D 3/48, C25D 3/62, C25D 3/64"
+            st.session_state["cpc_input_val"] = "C25D 3/46, C25D 3/48, C25D 3/64"
+            st.session_state["p1_n_val"] = "Target: 貴金屬電鍍浴與接觸件"
+            st.session_state["p1_e_val"] = "electroplating bath, gold electroplating, silver plating, contact terminal, lead frame"
+            st.session_state["p1_z_val"] = "電鍍浴, 鍍金, 鍍銀, 接觸端子, 引線框架, 貴金屬沉積"
+            st.session_state["p2_n_val"] = "Mechanism: 雜環季銨鹽與含硫細化劑協同"
+            st.session_state["p2_e_val"] = "grain refiner, brightener, quaternary ammonium, heterocyclic compound, sulfopropyl disulfide"
+            st.session_state["p2_z_val"] = "晶粒細化劑, 光澤劑, 聚季銨鹽, 芳香雜環, 硫丙基二硫化物, 陰極極化"
+            st.session_state["p3_n_val"] = "Effect: 奈米微晶緻密與耐磨抗氧化"
+            st.session_state["p3_e_val"] = "nanocrystalline, dendritic suppression, low contact resistance, wear resistance, wire bondability"
+            st.session_state["p3_z_val"] = "奈米晶粒, 抑制枝晶, 低接觸阻抗, 耐磨耗, 打線結合力, 鏡面光澤"
+            st.session_state["claims_data"] = [
+                {"要件編號": "Element 1A", "本案 Claim 1 技術要件": "一貴金屬電鍍添加劑，包含 0.1~10 重量份之主光澤劑，其具含氮芳香雜環或聚季銨鹽陽離子結構", "前案 D1 對應技術": "常規吡啶衍生物單一有機光澤劑", "前案 D2 對應技術": "硫脲類晶粒抑制劑", "符合性判定": "NO (不符/差異點)", "差異/進步性說明": "本案採用特定聚季銨鹽結構，在高電流密度區具備更強的陰極吸附極化能力，不易高溫裂解。"},
+                {"要件編號": "Element 1B", "本案 Claim 1 技術要件": "包含 0.05~5 重量份之輔助細化劑，選自含硫或磺酸基有機抑制劑（如 MPS/SPS/MBI 類）", "前案 D1 對應技術": "游離磺酸鹽載體", "前案 D2 對應技術": "含硫醇基之界面整平劑", "符合性判定": "YES (字面讀取)", "差異/進步性說明": "公知之含硫去極化或微晶細化構件，用於輔助抑制樹枝狀結晶生成。"},
+                {"要件編號": "Element 1C", "本案 Claim 1 技術要件": "該主光澤劑與輔助細化劑之重量比限定為 1:1 至 10:1，具特定吸附平衡比例", "前案 D1 對應技術": "未限定特定重量配比，由操作者隨機添加", "前案 D2 對應技術": "比例為 1:20 之微量添加系統", "符合性判定": "NO (不符/差異點)", "差異/進步性說明": "核心進步性特徵：特定 1:1~10:1 配比產生陰極極化過電位負移 50~200 mV 的協同效應，晶粒細化至 80 nm 以下且無脆化。"},
+                {"要件編號": "Element 1D", "本案 Claim 1 技術要件": "包含 0.5~8 重量份之極化調節界面活性劑與溶劑載體，使鍍液於 0.5~5 A/dm² 寬電流密度下維持鏡面光澤", "前案 D1 對應技術": "非離子界面活性劑（PEG-400）", "前案 D2 對應技術": "陰離子界面活性劑", "符合性判定": "均等成立 (DOE)", "差異/進步性說明": "提供鍍浴基本潤濕與排氫消泡功效，屬通常知識者可等效置換之均等構件。"}
+            ]
+            st.session_state["last_oa_result"] = OA_ELECTROPLATING_DOC
+
         elif sel == "邊緣運算光學瑕疵檢測":
             st.session_state["patent_title_input"] = "基於邊緣運算之即時影像瑕疵檢測系統"
             st.session_state["ipc_input_val"] = "G06T 7/00, G01N 21/88"
@@ -803,7 +941,7 @@ with tab_patent:
 
     st.sidebar.selectbox(
         "選擇技術模板快速填入：",
-        ["自訂輸入", "多光譜溫室作物病害早期偵測系統", "邊緣運算光學瑕疵檢測"],
+        ["自訂輸入", "貴金屬電鍍晶粒細化光澤劑", "多光譜溫室作物病害早期偵測系統", "邊緣運算光學瑕疵檢測"],
         key="template_select_key",
         on_change=apply_template
     )
@@ -815,7 +953,7 @@ with tab_patent:
         target_title = st.text_input(
             "請輸入專利標的名稱：",
             key="patent_title_input",
-            placeholder="例如：晶圓搬運機械手臂動態抑振控制系統 或 多光譜溫室作物病害早期偵測系統"
+            placeholder="例如：晶圓搬運機械手臂動態抑振控制系統 或 用於貴金屬電鍍之晶粒細化光澤添加劑組成物"
         )
 
     with col_input2:
@@ -833,7 +971,6 @@ with tab_patent:
                 try:
                     ai_res = analyze_patent_with_gemini(user_api_key.strip(), target_title.strip())
 
-                    # 同步更新綁定到輸入框的所有 Session State Key
                     st.session_state["ipc_input_val"] = ai_res.get("ipc", "")
                     st.session_state["cpc_input_val"] = ai_res.get("cpc", "")
                     st.session_state["p1_n_val"] = ai_res.get("pillar_a_name", "Target: 應用標的")
@@ -856,9 +993,9 @@ with tab_patent:
 
     col_class1, col_class2 = st.columns(2)
     with col_class1:
-        ipc_input = st.text_input("IPC 分類號 (逗號隔開)", key="ipc_input_val", placeholder="例: A01G 9/24, G01N 21/84")
+        ipc_input = st.text_input("IPC 分類號 (逗號隔開)", key="ipc_input_val", placeholder="例: C25D 3/46, C25D 3/48")
     with col_class2:
-        cpc_input = st.text_input("CPC 分類號 (逗號隔開)", key="cpc_input_val", placeholder="例: G06V 20/188")
+        cpc_input = st.text_input("CPC 分類號 (逗號隔開)", key="cpc_input_val", placeholder="例: C25D 3/46, C25D 3/64")
 
     st.markdown("---")
     st.subheader("2. 技術三支柱特徵拆解")
@@ -1011,8 +1148,21 @@ with tab_patent:
 
     if st.session_state.get("last_oa_result"):
         with st.expander("📄 檢視最新產出之專利申復答辯理由書", expanded=True):
-            st.markdown(st.session_state["last_oa_result"])
-            render_copy_button(st.session_state["last_oa_result"], "📋 快速複製申復理由全文", button_id="copyQuickOA")
+            oa_display_text = st.session_state["last_oa_result"]
+            st.text_area("申復理由書全文：", value=oa_display_text, height=350, key="quick_oa_preview_box")
+            col_oa_copy, col_oa_dl = st.columns(2)
+            with col_oa_copy:
+                render_copy_button(oa_display_text, "📋 快速複製申復理由全文", button_id="copyQuickOA")
+            with col_oa_dl:
+                current_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                st.download_button(
+                    label="📥 下載申復理由書檔案 (.txt)",
+                    data=oa_display_text.encode("utf-8"),
+                    file_name=f"Patent_OA_Response_{current_timestamp}.txt",
+                    mime="text/plain;charset=utf-8",
+                    type="primary",
+                    use_container_width=True
+                )
 
     st.markdown("---")
     if st.button("🚀 生成專利檢索式並整合比對報告", type="primary", use_container_width=True):
@@ -1240,7 +1390,7 @@ with tab_laws:
             "4. 相對人商標未達著名程度：相對人在台並無大量宣傳與市佔實績，不得任意擴大排他範圍跨類阻礙合理周邊商業自由競爭。"
         )
     elif "進步性核駁" in oa_law:
-        default_oa_target = st.session_state.get("patent_title_input", "多光譜溫室作物病害早期偵測系統")
+        default_oa_target = st.session_state.get("patent_title_input", "用於貴金屬電鍍之晶粒細化光澤添加劑組成物")
         default_oa_grounds = "審查官認為本案 Claim 1 所請技術特徵，為所屬技術領域具通常知識者結合引證案 D1 之監控相機與引證案 D2 之光譜計算演算法所能輕易置換完成，不具進步性。"
         default_oa_diffs = (
             "1. 引證案 D1 僅揭露全光譜 RGB 可見光，並未揭露本案於特定水份與葉綠素吸收窄波段濾波感測。\n"
@@ -1293,7 +1443,7 @@ with tab_laws:
     if st.session_state.get("last_oa_result"):
         oa_doc = st.session_state["last_oa_result"]
         st.markdown("#### 📄 申復答辯理由書草稿預覽")
-        st.markdown(oa_doc)
+        st.text_area("申復理由書全文內容（可線上直接微調）：", value=oa_doc, height=350, key="oa_general_textarea")
 
         col_oa_copy, col_oa_dl = st.columns(2)
         with col_oa_copy:
@@ -1302,9 +1452,9 @@ with tab_laws:
             oa_time = datetime.now().strftime('%Y%m%d_%H%M%S')
             st.download_button(
                 "📥 下載申復理由書 (.txt)",
-                data=oa_doc,
+                data=oa_doc.encode("utf-8"),
                 file_name=f"OA_Response_{oa_time}.txt",
-                mime="text/plain",
+                mime="text/plain;charset=utf-8",
                 type="secondary",
                 use_container_width=True
             )
