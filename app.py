@@ -512,7 +512,130 @@ def render_copy_button(text_to_copy: str, button_label: str = "📋 點擊複製
     components.html(html_code, height=50)
 
 # ==============================================================================
-# 六、 Streamlit 介面配置
+# 六、 智財核心法規資料庫 (專利法 ＆ 商標法常用條文)
+# ==============================================================================
+IP_LAWS_DB = [
+    {
+        "category": "專利法",
+        "article": "專利法 第 21 條",
+        "title": "發明之定義",
+        "keywords": "自然法則, 技術思想, 發明",
+        "text": "本法所稱發明，指利用自然法則之技術思想之創作。",
+        "explanation": "發明必須是「利用自然法則」之技術創作。純粹之數學公式、商業模式、人為遊戲規則、純電腦演算法或非利用自然法則者，無法單獨取得發明專利。"
+    },
+    {
+        "category": "專利法",
+        "article": "專利法 第 22 條",
+        "title": "專利三要件（產業利用性、新穎性、進步性）",
+        "keywords": "新穎性, 進步性, 產業利用性, 公開, 容易完成",
+        "text": (
+            "可供產業上利用之發明，無下列情事之一，得依本法申請專利：\n"
+            "一、申請前已見於刊物者。\n"
+            "二、申請前已公開實施者。\n"
+            "三、申請前已為公眾所知悉者。\n\n"
+            "發明雖無前項各款所列情事，但為其所屬技術領域中具有通常知識者依申請前之先前技術所能輕易完成時，仍不得依本法申請專利。"
+        ),
+        "explanation": "【實務要點】第1項規範「新穎性」（單一前案不可完全揭露所有技術特徵）；第2項規範「進步性」（所屬技術領域具通常知識者無法依多份前案結合輕易完成）。"
+    },
+    {
+        "category": "專利法",
+        "article": "專利法 第 26 條",
+        "title": "說明書之充分揭露與申請專利範圍之明確性",
+        "keywords": "說明書, 申請專利範圍, 明確, 充分揭露, 支持",
+        "text": (
+            "說明書應明確且充分揭露，使該發明所屬技術領域中具有通常知識者，能瞭解其內容，並可據以實現。\n"
+            "申請專利範圍應界定申請專利之發明；其得包括一項以上之請求項，各請求項應以明確、簡潔之方式記載，且必須為說明書所支持。"
+        ),
+        "explanation": "獨立項不可記載不明確或宣傳性功效用語；說明書必須達到「可據以實現（Enablement）」門檻，否則將依本條核駁或提起無效舉發。"
+    },
+    {
+        "category": "專利法",
+        "article": "專利法 第 58 條",
+        "title": "專利權人之排他專有權限",
+        "keywords": "專利權, 排他權, 製造, 為販賣之要約, 販賣, 使用, 輸入",
+        "text": (
+            "專利權人，除本法另有規定外，專有排除他人未經其同意而製造、為販賣之要約、販賣、使用或為上述目的而進口該發明之權。\n"
+            "物之發明，其專利權範圍不及於以該物為標的所生產之產品。"
+        ),
+        "explanation": "專利權本質上為「排除他人未經同意實施」之消極排他權，而非保證自己實施時絕不侵害他人專利。"
+    },
+    {
+        "category": "專利法",
+        "article": "專利法 第 59 條",
+        "title": "專利權效力之限制（合理使用）",
+        "keywords": "效力限制, 非營利, 研究, 試驗, 藥品查驗",
+        "text": (
+            "發明專利權之效力，不及於下列各款情事：\n"
+            "一、非出於商業目的之未公開行為。\n"
+            "二、以研究或實驗為目的實施發明之必要行為。\n"
+            "三、在專利申請日前，在國內已實施該發明，或已完成必須之準備者（先使用權）。"
+        ),
+        "explanation": "非商業目的之學術研發或學術試驗行為不受專利權拘束；若在他人專利申請日前已在國內量產或完成準備，得主張先使用權。"
+    },
+    {
+        "category": "商標法",
+        "article": "商標法 第 18 條",
+        "title": "商標之定義與識別性基本原則",
+        "keywords": "商標, 識別性, 表彰, 商品, 服務",
+        "text": (
+            "商標，指任何具有識別性之標識，得以文字、圖形、記號、顏色、立體形狀、動態、全像圖、聲音等，或其聯合式所組成。\n"
+            "前項所稱識別性，指足以使商品或服務之相關消費者認識為指示商品或服務來源，並得與他人之商品或服務相區別者。"
+        ),
+        "explanation": "商標的核心靈魂為「識別性（Distinctiveness）」，必須能讓消費者將其視為品牌標識，而非單純的商品名稱或廣告宣傳口號。"
+    },
+    {
+        "category": "商標法",
+        "article": "商標法 第 29 條",
+        "title": "不得註冊商標之事由（缺乏先天識別性）",
+        "keywords": "說明性, 描述性, 通用名稱, 先天識別性, 後天識別性",
+        "text": (
+            "商標有下列情形之一，不得註冊：\n"
+            "一、僅由說明所指定商品或服務之品質、用途、原料、產地或相關特性之標識所組成者。\n"
+            "二、僅由所指定商品或服務之通用名稱或形狀所組成者。\n"
+            "三、僅由其他不具識別性之標識所組成者。\n\n"
+            "有前項各款規定之情形，如經申請人使用且在交易上已成為商品或服務之識別標識者，不在此限（後天識別性）。"
+        ),
+        "explanation": "直接描述產品功能（如在水果賣場註冊「鮮甜可口」）欠缺先天識別性；但若經長期大規模商業行銷使公眾認知其為品牌（例如「黑貓宅急便」），可依第2項主張後天識別性取得註冊。"
+    },
+    {
+        "category": "商標法",
+        "article": "商標法 第 30 條 第 1 項 第 10 款",
+        "title": "相對不得註冊事由（致相關消費者混淆誤認之虞）",
+        "keywords": "混淆誤認, 相同, 近似, 先申請, 同一, 類似",
+        "text": (
+            "商標有下列情形之一，不得註冊：\n"
+            "十、相同或近似於他人同一或類似商品或服務之註冊商標或申請在先之商標，有致相關消費者混淆誤認之虞者。"
+        ),
+        "explanation": "這是商標核駁與異議最常見的條款。審查時會考量：商標圖樣外觀/讀音/觀念近似程度、商品或服務類似程度、先權利商標之著名程度等多重因素。"
+    },
+    {
+        "category": "商標法",
+        "article": "商標法 第 30 條 第 1 項 第 11 款",
+        "title": "著名商標之保護（淡化與仿冒防範）",
+        "keywords": "著名商標, 減損識別性, 減損信譽, 淡化, 仿冒",
+        "text": (
+            "商標有下列情形之一，不得註冊：\n"
+            "十一、相同或近似於他人著名商標或標章，有致相關公眾混淆誤認之虞，或有減損著名商標或標章之識別性或信譽之虞者。"
+        ),
+        "explanation": "著名商標享跨類別擴張保護。即使商品或服務類別不相同，若使用他人著名品牌容易造成稀釋（Dilution）或減損商譽者，同樣不得註冊。"
+    },
+    {
+        "category": "商標法",
+        "article": "商標法 第 68 條",
+        "title": "侵害商標權之行為態樣",
+        "keywords": "侵權, 排除侵害, 混淆誤認, 使用商標",
+        "text": (
+            "未得商標權人同意，有下列情形之一，為侵害商標權：\n"
+            "一、於同一商品或服務，使用相同於註冊商標之商標者。\n"
+            "二、於類似之商品或服務，使用相同於註冊商標之商標，有致相關消費者混淆誤認之虞者。\n"
+            "三、於同一或類似之商品或服務，使用近似於註冊商標之商標，有致相關消費者混淆誤認之虞者。"
+        ),
+        "explanation": "於同類商品使用相同商標屬典型直接侵權；於類似商品或使用近似商標，則以「致相關消費者混淆誤認之虞」為實質侵權成立之核心判定。"
+    }
+]
+
+# ==============================================================================
+# 七、 Streamlit 介面配置
 # ==============================================================================
 st.set_page_config(
     page_title="智慧財產權整合工作台 (專利 ＆ 商標)",
@@ -521,7 +644,7 @@ st.set_page_config(
 )
 
 st.title("🛡️ 智慧財產權整合工作台 (專利 ＆ 商標)")
-st.markdown("結合 **Google Patents 邏輯檢索**、**專利號自動爬取對應**、**Claims 全要件比對矩陣** 與 **TIPO 規範圖樣生成**。")
+st.markdown("結合 **Google Patents 邏輯檢索**、**專利號自動爬取對應**、**Claims 全要件比對矩陣**、**TIPO 規範圖樣生成** 與 **智財法規速查**。")
 
 # 側邊欄金鑰設定
 st.sidebar.header("🔑 Gemini API 設定")
@@ -538,7 +661,11 @@ user_api_key = st.sidebar.text_input(
     help="可在 Google AI Studio (aistudio.google.com) 免費申請 API Key。"
 )
 
-tab_patent, tab_trademark = st.tabs(["📄 專利檢索與 Claims 比對矩陣", "🏷️ 商標權佈局與圖樣生成器"])
+tab_patent, tab_trademark, tab_laws = st.tabs([
+    "📄 專利檢索與 Claims 比對矩陣",
+    "🏷️ 商標權佈局與圖樣生成器",
+    "⚖️ 智財法規速查 (專利法 ＆ 商標法)"
+])
 
 # ==============================================================================
 # TAB 1: 專利權模組
@@ -591,11 +718,11 @@ with tab_patent:
         })
     elif template == "邊緣運算光學瑕疵檢測":
         st.session_state.form_data.update({
-            "title": "基於邊緣運算之即時影像瑕疵檢測系統"[cite: 1],
-            "ipc": "G06T 7/00, G01N 21/88"[cite: 1], "cpc": "G06V 10/00"[cite: 1],
-            "p1_name": "Target: 瑕疵檢測"[cite: 1], "p1_en": "defect detection, flaw inspection, surface anomaly"[cite: 1], "p1_zh": "瑕疵檢測, 缺陷檢驗, 表面異常"[cite: 1],
-            "p2_name": "Mechanism: 邊緣運算與視覺推論"[cite: 1], "p2_en": "edge computing, neural network, real-time inferenc*"[cite: 1], "p2_zh": "邊緣運算, 神經網絡, 即時推論, 深度學習"[cite: 1],
-            "p3_name": "Effect: 低延遲與高精度"[cite: 1], "p3_en": "low latency, high throughput, false positive reduction"[cite: 1], "p3_zh": "低延遲, 降低誤判, 即時處理"[cite: 1],
+            "title": "基於邊緣運算之即時影像瑕疵檢測系統",
+            "ipc": "G06T 7/00, G01N 21/88", "cpc": "G06V 10/00",
+            "p1_name": "Target: 瑕疵檢測", "p1_en": "defect detection, flaw inspection, surface anomaly", "p1_zh": "瑕疵檢測, 缺陷檢驗, 表面異常",
+            "p2_name": "Mechanism: 邊緣運算與視覺推論", "p2_en": "edge computing, neural network, real-time inferenc*", "p2_zh": "邊緣運算, 神經網絡, 即時推論, 深度學習",
+            "p3_name": "Effect: 低延遲與高精度", "p3_en": "low latency, high throughput, false positive reduction", "p3_zh": "低延遲, 降低誤判, 即時處理",
             "claims": [
                 {"要件編號": "Element 1A", "本案 Claim 1 技術要件": "一工業高速相機，擷取產線物件表面光學影像", "前案 D1 對應技術": "CCD 線型感測器", "前案 D2 對應技術": "面陣相機", "符合性判定": "YES (字面讀取)", "差異/進步性說明": "公知取像構件"},
                 {"要件編號": "Element 1B", "本案 Claim 1 技術要件": "一邊緣推論加速模組，具備特定神經網路剪枝架構", "前案 D1 對應技術": "工控機 GPU 集中運算", "前案 D2 對應技術": "雲端伺服器推論", "符合性判定": "NO (不符/差異點)", "差異/進步性說明": "邊緣端低功耗輕量化推論"},
@@ -686,7 +813,6 @@ with tab_patent:
     with col_p3:
         st.markdown("#### 支柱 C：技術功效 (Effect)")
         p3_name = st.text_input("支柱 C 名稱", value=st.session_state.form_data["p3_name"], key="p3_n")
-        # 此處徹底校正為 st.session_state.form_data["p3_en"]
         p3_en = st.text_area("英文關鍵字 (逗號隔開)", value=st.session_state.form_data["p3_en"], key="p3_e", height=100)
         p3_zh = st.text_area("中文關鍵字 (逗號隔開)", value=st.session_state.form_data["p3_zh"], key="p3_z", height=100)
 
@@ -930,3 +1056,50 @@ with tab_trademark:
             st.caption("💡 說明：此 JPG 圖檔已完全符合智慧局 E-filing 送件系統規格，可直接作為註冊圖樣上傳。")
         else:
             st.warning("請先於左側輸入商標名稱以生成圖樣。")
+
+# ==============================================================================
+# TAB 3: 智財法規速查模組 (專利法 ＆ 商標法)
+# ==============================================================================
+with tab_laws:
+    st.subheader("⚖️ 專利法與商標法關鍵條文速查指南")
+    st.markdown("快速檢索與參考台灣**《專利法》**與**《商標法》**核心條文、實務審查要點與常見核駁/答辯條款。")
+
+    col_filter1, col_filter2 = st.columns([1, 2])
+    with col_filter1:
+        law_type_filter = st.selectbox("篩選法規類別：", ["全部法規", "專利法", "商標法"])
+    with col_filter2:
+        search_kw = st.text_input("輸入條文、標題或關鍵字快速過濾：", placeholder="例如：新穎性、進步性、混淆誤認、識別性、排他權")
+
+    # 執行過濾篩選
+    filtered_laws = IP_LAWS_DB
+    if law_type_filter != "全部法規":
+        filtered_laws = [item for item in filtered_laws if item["category"] == law_type_filter]
+
+    if search_kw.strip():
+        kw = search_kw.strip().lower()
+        filtered_laws = [
+            item for item in filtered_laws
+            if kw in item["article"].lower() or kw in item["title"].lower() or kw in item["keywords"].lower() or kw in item["text"].lower()
+        ]
+
+    st.caption(f"共找到 {len(filtered_laws)} 則相關核心法規條文：")
+
+    for item in filtered_laws:
+        badge = "📄 專利法" if item["category"] == "專利法" else "🏷️ 商標法"
+        expander_title = f"{badge} ｜ {item['article']}：{item['title']}"
+        with st.expander(expander_title, expanded=True if search_kw.strip() else False):
+            st.markdown(f"**🔍 關鍵字標籤**：`{item['keywords']}`")
+            st.markdown("##### 📜 法定條文內容：")
+            st.code(item["text"], language="text")
+            st.markdown("##### 💡 審查實務與答辯要點：")
+            st.info(item["explanation"])
+
+    st.markdown("---")
+    st.markdown("#### 🌐 官方全國法規資料庫即時連結")
+    col_ext1, col_ext2, col_ext3 = st.columns(3)
+    with col_ext1:
+        st.link_button("📜 中華民國《專利法》完整法條", "https://law.moj.gov.tw/LawClass/LawAll.aspx?pcode=J0070007", use_container_width=True)
+    with col_ext2:
+        st.link_button("🏷️ 中華民國《商標法》完整法條", "https://law.moj.gov.tw/LawClass/LawAll.aspx?pcode=J0070001", use_container_width=True)
+    with col_ext3:
+        st.link_button("🏛️ 智慧財產局專利/商標審查基準", "https://www.tipo.gov.tw/", use_container_width=True)
