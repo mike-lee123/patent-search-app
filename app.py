@@ -211,20 +211,23 @@ def fetch_patent_data_from_google(patent_no: str) -> dict:
     }
 
 # ==============================================================================
-# 三、 Gemini AI 自動重試與備援輪替封裝 (鎖定 3.6-flash 端點)
+# 三、 Gemini AI 自動重試與指數退避輪替 (解決 503 UNAVAILABLE 與 429 高峰)
 # ==============================================================================
 CANDIDATE_MODELS = [
+    "gemini-2.5-flash",
+    "gemini-2.5-pro",
     "gemini-3.6-flash",
     "gemini-3.8-flash",
     "gemini-3.5-flash"
 ]
 
 def generate_with_fallback(client, prompt: str, as_json: bool = True) -> str:
-    """依序嘗試 CANDIDATE_MODELS 清單中的模型，遇 503/429 退避重試"""
+    """自動跨多款模型輪替，並加入指數退避機制因應 503/429"""
     last_exception = None
     config_args = {"response_mime_type": "application/json"} if as_json else {}
+
     for model_name in CANDIDATE_MODELS:
-        for attempt in range(2):
+        for attempt in range(3):  # 每個模型嘗試最多 3 次
             try:
                 response = client.models.generate_content(
                     model=model_name,
@@ -236,13 +239,16 @@ def generate_with_fallback(client, prompt: str, as_json: bool = True) -> str:
             except Exception as e:
                 last_exception = e
                 err_str = str(e)
+                # 遇 503 或 429 時執行指數退避等待 (2s -> 4s -> 6s)
                 if any(code in err_str for code in ["503", "429", "UNAVAILABLE", "RESOURCE_EXHAUSTED"]):
-                    time.sleep(2)
+                    time.sleep(2 * (attempt + 1))
                     continue
+                # 若模型名稱不存在 (404) 則立即切換下一個候選模型
                 if "404" in err_str or "NOT_FOUND" in err_str:
                     break
                 break
-    raise last_exception if last_exception else Exception("所有備援模型皆無法呼叫，請檢查 API Key 權限。")
+
+    raise last_exception if last_exception else Exception("所有備援模型皆忙碌或無法呼叫，請檢查 API Key 權限或稍後重試。")
 
 def analyze_patent_with_gemini(api_key: str, title: str) -> dict:
     """專利特徵與 IPC/CPC 拆解"""
@@ -376,10 +382,7 @@ def create_tipo_trademark_bytes(
     line_spacing_ratio: float = 0.35,
     logo_file=None
 ) -> bytes:
-    """
-    產生符合 TIPO 電子送件 8x8 cm 300DPI (945x945 px) 規格之 JPEG bytes。
-    支援多行文本、自訂靠左/置中/靠右對齊、自訂行距，以及 Logo 圖文合成。
-    """
+    """產生符合 TIPO 電子送件 8x8 cm 300DPI (945x945 px) 規格之 JPEG bytes"""
     dpi = 300
     cm_to_inch = 2.54
     width_px = int((8.0 / cm_to_inch) * dpi)
@@ -407,7 +410,7 @@ def create_tipo_trademark_bytes(
     if font is None:
         font = ImageFont.load_default()
 
-    # 處理文字分行與維度量測
+    # 處理文字分行與量測
     lines = [line.strip() for line in text.strip().split("\n") if line.strip()]
     if not lines:
         lines = [""]
@@ -427,7 +430,7 @@ def create_tipo_trademark_bytes(
     total_text_h = sum(line_heights) + line_spacing_px * (len(lines) - 1)
     max_line_w = max(line_widths) if line_widths else 0
 
-    # 處理 Logo 圖檔
+    # 處理 Logo
     logo_img = None
     if logo_file is not None:
         try:
@@ -442,7 +445,6 @@ def create_tipo_trademark_bytes(
             logo_img = None
 
     def draw_multiline_block(start_top_y: int, block_center_x: int, block_w: int):
-        """依據指定對齊方式繪製多行文字"""
         cur_y = start_top_y
         for i, line in enumerate(lines):
             lw = line_widths[i]
@@ -459,7 +461,6 @@ def create_tipo_trademark_bytes(
             draw.text((tx, cur_y - bbox[1]), line, font=font, fill=(0, 0, 0))
             cur_y += lh + line_spacing_px
 
-    # 排版繪製
     if logo_img and layout == "複合商標：上圖下文":
         target_logo_h = int(height_px * 0.42)
         aspect = logo_img.width / logo_img.height
@@ -500,7 +501,6 @@ def create_tipo_trademark_bytes(
         draw_multiline_block(text_start_y, text_center_x, max_line_w)
 
     else:
-        # 純文字多行模式
         start_y = (height_px - total_text_h) // 2
         draw_multiline_block(start_y, width_px // 2, max_line_w)
 
@@ -803,7 +803,7 @@ with tab_patent:
         elif not target_title.strip():
             st.warning("請先輸入專利標的名稱。")
         else:
-            with st.spinner("🤖 正在調用 Gemini 拆解技術特徵..."):
+            with st.spinner("🤖 正在調用 Gemini 拆解技術特徵（含自動指數退避保護）..."):
                 try:
                     ai_res = analyze_patent_with_gemini(user_api_key.strip(), target_title.strip())
                     st.session_state.form_data.update({
@@ -864,7 +864,7 @@ with tab_patent:
 
     col_fetch1, col_fetch2, col_fetch3 = st.columns([2, 1, 1])
     with col_fetch1:
-        target_pno = st.text_input("前案專利號 (公開號/公告號)：", placeholder="例如：US11234567B2、EP3567890A1、US20230012345A1", key="fetch_pno_input")
+        target_pno = st.text_input("前案專利號 (公開號/公告號)：", placeholder="例如：US11234567B2、EP3739504A1、US11373399B2", key="fetch_pno_input")
     with col_fetch2:
         target_slot = st.selectbox("填入比對欄位：", ["前案 D1 對應技術", "前案 D2 對應技術"], key="fetch_slot_select")
     with col_fetch3:
@@ -1078,7 +1078,7 @@ with tab_trademark:
             elif not tm_brand.strip():
                 st.warning("請填寫擬申請之商標文字。")
             else:
-                with st.spinner("🤖 正在調用 Gemini 評估商標識別性與分類..."):
+                with st.spinner("🤖 正在調用 Gemini 評估商標識別性與分類（含退避保護）..."):
                     try:
                         st.session_state.tm_analysis = analyze_trademark_with_gemini(user_api_key.strip(), tm_brand.strip(), tm_desc.strip())
                         st.success("🎉 商標分析完成！")
@@ -1104,7 +1104,6 @@ with tab_trademark:
         st.markdown("#### 2. TIPO 電子送件商標圖樣即時產生器 (含 Logo 合成與彈性換行)")
         st.caption("官方硬性規範：8×8 公分、300 DPI、945×945 px、純白底色、RGB 模式 JPEG。")
 
-        # 支援多行文字輸入
         tm_multiline_text = st.text_area(
             "圖樣文字內容（支援按下 Enter 自由換行）：",
             value=tm_brand.strip() if tm_brand.strip() else "葉語\nSpectrIQ",
