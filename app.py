@@ -181,12 +181,18 @@ class PatentSearchBuilder:
         return "\n".join(lines)
 
 # ==============================================================================
-# 二、 專利號爬取與內容解析
+# 二、 專利號爬取與內容解析 (已修復 UTF-8 中文解碼與語言路由)
 # ==============================================================================
 def fetch_patent_data_from_google(patent_no: str) -> dict:
-    """從 Google Patents 爬取專利名稱、摘要與申請專利範圍"""
+    """從 Google Patents 爬取專利資料 (嚴格以 UTF-8 解碼，杜絕繁簡中文亂碼)"""
     clean_pno = re.sub(r'[\s\-_/]', '', patent_no).upper()
-    url = f"https://patents.google.com/patent/{clean_pno}/en"
+    
+    # 智慧語言路由：CN 或 TW 專利優先存取原始中文介面，其餘導向 /en 英文介面
+    if clean_pno.startswith(("CN", "TW")):
+        url = f"https://patents.google.com/patent/{clean_pno}"
+    else:
+        url = f"https://patents.google.com/patent/{clean_pno}/en"
+
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
@@ -195,7 +201,11 @@ def fetch_patent_data_from_google(patent_no: str) -> dict:
     if resp.status_code != 200:
         raise Exception(f"無法取得專利資料 (HTTP {resp.status_code})，請確認專利號碼是否正確。")
 
-    soup = BeautifulSoup(resp.text, "html.parser")
+    # 強制指定 UTF-8，杜絕 requests 誤判為 ISO-8859-1
+    resp.encoding = 'utf-8'
+
+    # 使用二進位 content 搭配明確編碼解析
+    soup = BeautifulSoup(resp.content, "html.parser", from_encoding="utf-8")
 
     title_elem = soup.find("meta", {"name": "DC.title"})
     title = title_elem["content"].strip() if title_elem and "content" in title_elem.attrs else ""
@@ -249,7 +259,6 @@ def generate_with_fallback(client, prompt: str, as_json: bool = True) -> str:
             except Exception as e:
                 last_exception = e
                 err_str = str(e)
-                # 偵測到 503、429 或服務忙碌時，稍作短暫退避後立刻切換到下一款模型
                 if any(code in err_str for code in ["503", "429", "UNAVAILABLE", "RESOURCE_EXHAUSTED"]):
                     time.sleep(1.2 * (attempt + 1))
                     break  # 跳出當前模型重試，換下一款模型
@@ -783,10 +792,10 @@ USER_MANUAL_MARKDOWN = """# 📖 智慧財產權整合工作台 操作手冊
   * 各欄位關鍵字請使用半形逗號 `,` 隔開，包含空格的英文片語會自動以雙引號保護。
 
 ### 步驟 2：引證前案爬取與全要件比對 (Auto-fetch Prior Art)
-1. **輸入前案專利號**：填入公開號或公告號（例如：`US11578418B2`、`US8608931B2`、`US6165342A` 或 `EP3739504A1`）。
+1. **輸入前案專利號**：填入公開號或公告號（例如：`US11578418B2`、`CN110016700A`、`US8608931B2` 或 `EP3739504A1`）。
 2. **選取填入欄位**：下拉選擇 `前案 D1 對應技術` 或 `前案 D2 對應技術`。
 3. **點擊「📥 爬取並自動填入」**：
-   * 系統自動爬取 Google Patents 摘要與 Claims 原文。
+   * 系統自動爬取 Google Patents 摘要與 Claims 原文（已完整修復繁簡中文 UTF-8 編碼與語言路由，絕不亂碼）。
    * AI 自動將前案構件對應至 Claim 1 各 Element，並更新符合性判定（YES / NO / 均等成立）。
    * 內建防禦 503 / 429 機制，遇尖峰負載將自動毫秒級輪替備援模型。
 4. **檢視原文**：可在下方展開卡片中即時閱讀摘要與 Claims 原文。
@@ -1188,7 +1197,7 @@ with tab_patent:
 
     with col_p2:
         st.markdown("#### 支柱 B：核心手段 (Mechanism)")
-        p2_name = st.text_input("支柱 B 名稱", key="p2_n_val")
+        p2_name = st.text_input("支柱 B 名產", key="p2_n_val")
         p2_en = st.text_area("英文關鍵字 (逗號隔開)", key="p2_e_val", height=100)
         p2_zh = st.text_area("中文關鍵字 (逗號隔開)", key="p2_z_val", height=100)
 
@@ -1204,11 +1213,11 @@ with tab_patent:
     # 3. 引證前案自動爬取與比對
     # ==========================================================================
     st.subheader("3. 引證前案專利號爬取與自動比對 (Auto-fetch Prior Art)")
-    st.caption("輸入引證案公開/公告號（支援 US、EP、WO、TW 等），自動自 Google Patents 爬取內容，並由 AI 比對填入下表指定的前案欄位。")
+    st.caption("輸入引證案公開/公告號（支援 US、EP、WO、CN、TW 等），自動自 Google Patents 爬取內容，並由 AI 比對填入下表指定的前案欄位。")
 
     col_fetch1, col_fetch2, col_fetch3 = st.columns([2, 1, 1])
     with col_fetch1:
-        target_pno = st.text_input("前案專利號 (公開號/公告號)：", placeholder="例如：US11578418B2、US8608931B2 或 US6165342A", key="fetch_pno_input")
+        target_pno = st.text_input("前案專利號 (公開號/公告號)：", placeholder="例如：US11578418B2、CN110016700A 或 US8608931B2", key="fetch_pno_input")
     with col_fetch2:
         target_slot = st.selectbox("填入比對欄位：", ["前案 D1 對應技術", "前案 D2 對應技術"], key="fetch_slot_select")
     with col_fetch3:
@@ -1294,7 +1303,7 @@ with tab_patent:
     with col_claim_oa1:
         st.caption("💡 提示：若表格中有被判定為「NO (不符/差異點)」的元件，可直接利用右方按鈕一鍵撰寫《專利法》第22條第2項進步性答辯理由。")
     with col_claim_oa2:
-        quick_oa_btn = st.button("⚖️️ 一鍵生成《專利法》第22條進步性申復理由", use_container_width=True)
+        quick_oa_btn = st.button("⚖️ 一鍵生成《專利法》第22條進步性申復理由", use_container_width=True)
 
     if quick_oa_btn:
         if not user_api_key.strip():
