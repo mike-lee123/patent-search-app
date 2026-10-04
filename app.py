@@ -145,7 +145,6 @@ class PatentSearchBuilder:
             "=" * 85
         ])
 
-        # 附錄：爬取之引證前案原文
         lines.extend([
             f"\n【六、引證前案原文摘錄（附錄 Appendix）】",
             "=" * 85,
@@ -227,7 +226,7 @@ def generate_with_fallback(client, prompt: str, as_json: bool = True) -> str:
     config_args = {"response_mime_type": "application/json"} if as_json else {}
 
     for model_name in CANDIDATE_MODELS:
-        for attempt in range(3):  # 每個模型嘗試最多 3 次
+        for attempt in range(3):
             try:
                 response = client.models.generate_content(
                     model=model_name,
@@ -239,11 +238,9 @@ def generate_with_fallback(client, prompt: str, as_json: bool = True) -> str:
             except Exception as e:
                 last_exception = e
                 err_str = str(e)
-                # 遇 503 或 429 時執行指數退避等待 (2s -> 4s -> 6s)
                 if any(code in err_str for code in ["503", "429", "UNAVAILABLE", "RESOURCE_EXHAUSTED"]):
                     time.sleep(2 * (attempt + 1))
                     continue
-                # 若模型名稱不存在 (404) 則立即切換下一個候選模型
                 if "404" in err_str or "NOT_FOUND" in err_str:
                     break
                 break
@@ -372,7 +369,7 @@ def generate_oa_response_with_gemini(api_key: str, law_article: str, target_name
     return generate_with_fallback(client, prompt, as_json=False)
 
 # ==============================================================================
-# 四、 商標圖樣繪製核心邏輯 (支援多行自由換行、對齊方式與行距微調)
+# 四、 商標圖樣繪製核心邏輯
 # ==============================================================================
 def create_tipo_trademark_bytes(
     text: str,
@@ -410,7 +407,6 @@ def create_tipo_trademark_bytes(
     if font is None:
         font = ImageFont.load_default()
 
-    # 處理文字分行與量測
     lines = [line.strip() for line in text.strip().split("\n") if line.strip()]
     if not lines:
         lines = [""]
@@ -430,7 +426,6 @@ def create_tipo_trademark_bytes(
     total_text_h = sum(line_heights) + line_spacing_px * (len(lines) - 1)
     max_line_w = max(line_widths) if line_widths else 0
 
-    # 處理 Logo
     logo_img = None
     if logo_file is not None:
         try:
@@ -455,7 +450,7 @@ def create_tipo_trademark_bytes(
                 tx = block_center_x - (block_w // 2) - bbox[0]
             elif text_align == "靠右對齊":
                 tx = block_center_x + (block_w // 2) - lw - bbox[0]
-            else:  # 置中對齊
+            else:
                 tx = block_center_x - (lw // 2) - bbox[0]
 
             draw.text((tx, cur_y - bbox[1]), line, font=font, fill=(0, 0, 0))
@@ -494,7 +489,7 @@ def create_tipo_trademark_bytes(
         start_x = (width_px - total_block_w) // 2
 
         logo_y = (height_px - new_h) // 2
-        canvas.paste(resized_logo, (start_x, logo_y))
+        canvas.paste(resized_logo, (logo_x, logo_y))
 
         text_center_x = start_x + target_logo_w + spacing + (max_line_w // 2)
         text_start_y = (height_px - total_text_h) // 2
@@ -673,13 +668,39 @@ IP_LAWS_DB = [
 ]
 
 # ==============================================================================
-# 七、 Streamlit 介面配置
+# 七、 Streamlit 介面與 Session State 同步管理 (100% 保證自動填入)
 # ==============================================================================
 st.set_page_config(
     page_title="智慧財產權整合工作台 (專利 ＆ 商標)",
     page_icon="🛡️",
     layout="wide"
 )
+
+# 初始化各個 Widget Key 狀態
+default_keys = {
+    "patent_title_input": "",
+    "ipc_input_val": "",
+    "cpc_input_val": "",
+    "p1_n_val": "Target: 應用標的",
+    "p1_e_val": "",
+    "p1_z_val": "",
+    "p2_n_val": "Mechanism: 核心手段/機構",
+    "p2_e_val": "",
+    "p2_z_val": "",
+    "p3_n_val": "Effect: 技術功效/特徵",
+    "p3_e_val": "",
+    "p3_z_val": "",
+    "claims_data": [
+        {"要件編號": "Element 1A", "本案 Claim 1 技術要件": "", "前案 D1 對應技術": "", "前案 D2 對應技術": "", "符合性判定": "待確認", "差異/進步性說明": ""}
+    ],
+    "last_fetched_patent": None,
+    "tm_analysis": None,
+    "last_oa_result": None
+}
+
+for k, v in default_keys.items():
+    if k not in st.session_state:
+        st.session_state[k] = v
 
 st.title("🛡️ 智慧財產權整合工作台 (專利 ＆ 商標)")
 st.markdown("結合 **Google Patents 邏輯檢索**、**專利號自動爬取對應**、**Claims 全要件比對矩陣**、**TIPO 規範圖樣生成** 與 **智財法規答辯生成器**。")
@@ -711,76 +732,53 @@ tab_patent, tab_trademark, tab_laws = st.tabs([
 with tab_patent:
     st.sidebar.markdown("---")
     st.sidebar.header("📁 專利技術範本")
-    template = st.sidebar.selectbox(
-        "選擇技術模板快速填入：",
-        [
-            "自訂輸入",
-            "多光譜溫室作物病害早期偵測系統",
-            "邊緣運算光學瑕疵檢測",
-            "無鏈條齒輪箱無段變速花轂"
-        ]
-    )
-
-    if "form_data" not in st.session_state:
-        st.session_state.form_data = {
-            "title": "", "ipc": "", "cpc": "",
-            "p1_name": "Target: 應用標的", "p1_en": "", "p1_zh": "",
-            "p2_name": "Mechanism: 核心手段/機構", "p2_en": "", "p2_zh": "",
-            "p3_name": "Effect: 技術功效/特徵", "p3_en": "", "p3_zh": "",
-            "claims": []
-        }
-
-    if "last_fetched_patent" not in st.session_state:
-        st.session_state.last_fetched_patent = None
-
-    if template == "多光譜溫室作物病害早期偵測系統":
-        st.session_state.form_data.update({
-            "title": "多光譜溫室作物病害早期偵測系統",
-            "ipc": "A01G 9/24, G01N 21/84, G06V 20/10, G06T 7/00",
-            "cpc": "A01G 9/24, G01N 2021/8466, G06V 20/188",
-            "p1_name": "Target: 溫室作物與植物病害",
-            "p1_en": "greenhouse crop, plant disease, foliage pathogen, tomato crop, crop health",
-            "p1_zh": "溫室作物, 植物病害, 葉片病原, 作物健康, 番茄病害",
-            "p2_name": "Mechanism: 多光譜感測與邊緣影像推論",
-            "p2_en": "multispectral imaging, hyperspectral sensor, narrowband reflectance, edge computing, deep learning inference",
-            "p2_zh": "多光譜影像, 高光譜感測, 窄波段反射率, 邊緣運算, 深度學習推論",
-            "p3_name": "Effect: 潛伏早期偵測與即時警報",
-            "p3_en": "early lesion detection, asymptomatic stage, pre-symptomatic diagnosis, real-time alert, false alarm reduction",
-            "p3_zh": "早期病斑偵測, 潛伏期診斷, 症狀前檢測, 即時告警, 降低誤判",
-            "claims": [
+    
+    def apply_template():
+        sel = st.session_state["template_select_key"]
+        if sel == "多光譜溫室作物病害早期偵測系統":
+            st.session_state["patent_title_input"] = "多光譜溫室作物病害早期偵測系統"
+            st.session_state["ipc_input_val"] = "A01G 9/24, G01N 21/84, G06V 20/10, G06T 7/00"
+            st.session_state["cpc_input_val"] = "A01G 9/24, G01N 2021/8466, G06V 20/188"
+            st.session_state["p1_n_val"] = "Target: 溫室作物與植物病害"
+            st.session_state["p1_e_val"] = "greenhouse crop, plant disease, foliage pathogen, tomato crop, crop health"
+            st.session_state["p1_z_val"] = "溫室作物, 植物病害, 葉片病原, 作物健康, 番茄病害"
+            st.session_state["p2_n_val"] = "Mechanism: 多光譜感測與邊緣影像推論"
+            st.session_state["p2_e_val"] = "multispectral imaging, hyperspectral sensor, narrowband reflectance, edge computing, deep learning inference"
+            st.session_state["p2_z_val"] = "多光譜影像, 高光譜感測, 窄波段反射率, 邊緣運算, 深度學習推論"
+            st.session_state["p3_n_val"] = "Effect: 潛伏早期偵測與即時警報"
+            st.session_state["p3_e_val"] = "early lesion detection, asymptomatic stage, pre-symptomatic diagnosis, real-time alert, false alarm reduction"
+            st.session_state["p3_z_val"] = "早期病斑偵測, 潛伏期診斷, 症狀前檢測, 即時告警, 降低誤判"
+            st.session_state["claims_data"] = [
                 {"要件編號": "Element 1A", "本案 Claim 1 技術要件": "一多光譜感測模組，配置於移動軌道，具有特定吸收峰窄波段濾波感測器", "前案 D1 對應技術": "常規 RGB 廣角監視器", "前案 D2 對應技術": "手持式分光輻射計", "符合性判定": "NO (不符/差異點)", "差異/進步性說明": "本案特定窄波段針對植物水分及葉綠素吸收峰，非可見光全光譜影像"},
                 {"要件編號": "Element 1B", "本案 Claim 1 技術要件": "一邊緣推論處理器，對多光譜影像執行植被指數（NDVI/PRI）正規化降維校正", "前案 D1 對應技術": "影像壓縮後直接回傳伺服器", "前案 D2 對應技術": "離線電腦以 MATLAB 批次運算", "符合性判定": "NO (不符/差異點)", "差異/進步性說明": "本案於感測端完成即時反光補償與植被指數特徵化，降低傳輸頻寬"},
                 {"要件編號": "Element 1C", "本案 Claim 1 技術要件": "一病斑早期預警神經網路模型，根據特徵化多光譜資訊預測前症狀潛伏病灶", "前案 D1 對應技術": "色差比對判定枯黃斑塊", "前案 D2 對應技術": "葉片病徵分類 CNN", "符合性判定": "NO (不符/差異點)", "差異/進步性說明": "本案能在葉片肉眼尚未顯性變色前 48 小時識別隱性病原感染"},
                 {"要件編號": "Element 1D", "本案 Claim 1 技術要件": "一環控連動介面，當接收預警訊號時觸發特定分區通風調節與精準噴灑", "前案 D1 對應技術": "警報訊息推播至使用者手機", "前案 D2 對應技術": "全區定時自動噴灌", "符合性判定": "YES (字面讀取)", "差異/進步性說明": "結合定位分區執行隔離防護之閉迴路控制"}
             ]
-        })
-    elif template == "邊緣運算光學瑕疵檢測":
-        st.session_state.form_data.update({
-            "title": "基於邊緣運算之即時影像瑕疵檢測系統",
-            "ipc": "G06T 7/00, G01N 21/88", "cpc": "G06V 10/00",
-            "p1_name": "Target: 瑕疵檢測", "p1_en": "defect detection, flaw inspection, surface anomaly", "p1_zh": "瑕疵檢測, 缺陷檢驗, 表面異常",
-            "p2_name": "Mechanism: 邊緣運算與視覺推論", "p2_en": "edge computing, neural network, real-time inferenc*", "p2_zh": "邊緣運算, 神經網絡, 即時推論, 深度學習",
-            "p3_name": "Effect: 低延遲與高精度", "p3_en": "low latency, high throughput, false positive reduction", "p3_zh": "低延遲, 降低誤判, 即時處理",
-            "claims": [
+        elif sel == "邊緣運算光學瑕疵檢測":
+            st.session_state["patent_title_input"] = "基於邊緣運算之即時影像瑕疵檢測系統"
+            st.session_state["ipc_input_val"] = "G06T 7/00, G01N 21/88"
+            st.session_state["cpc_input_val"] = "G06V 10/00"
+            st.session_state["p1_n_val"] = "Target: 瑕疵檢測"
+            st.session_state["p1_e_val"] = "defect detection, flaw inspection, surface anomaly"
+            st.session_state["p1_z_val"] = "瑕疵檢測, 缺陷檢驗, 表面異常"
+            st.session_state["p2_n_val"] = "Mechanism: 邊緣運算與視覺推論"
+            st.session_state["p2_e_val"] = "edge computing, neural network, real-time inferenc*"
+            st.session_state["p2_z_val"] = "邊緣運算, 神經網絡, 即時推論, 深度學習"
+            st.session_state["p3_n_val"] = "Effect: 低延遲與高精度"
+            st.session_state["p3_e_val"] = "low latency, high throughput, false positive reduction"
+            st.session_state["p3_z_val"] = "低延遲, 降低誤判, 即時處理"
+            st.session_state["claims_data"] = [
                 {"要件編號": "Element 1A", "本案 Claim 1 技術要件": "一工業高速相機，擷取產線物件表面光學影像", "前案 D1 對應技術": "CCD 線型感測器", "前案 D2 對應技術": "面陣相機", "符合性判定": "YES (字面讀取)", "差異/進步性說明": "公知取像構件"},
                 {"要件編號": "Element 1B", "本案 Claim 1 技術要件": "一邊緣推論加速模組，具備特定神經網路剪枝架構", "前案 D1 對應技術": "工控機 GPU 集中運算", "前案 D2 對應技術": "雲端伺服器推論", "符合性判定": "NO (不符/差異點)", "差異/進步性說明": "邊緣端低功耗輕量化推論"},
                 {"要件編號": "Element 1C", "本案 Claim 1 技術要件": "一動態閾值缺陷分割演算法，抑制表面反光雜訊", "前案 D1 對應技術": "固定灰階值二值化", "前案 D2 對應技術": "局部自適應閥值", "符合性判定": "均等成立 (DOE)", "差異/進步性說明": "進一步考量動態曝光補償"}
             ]
-        })
-    elif template == "無鏈條齒輪箱無段變速花轂":
-        st.session_state.form_data.update({
-            "title": "無鏈條傳動之齒輪箱無段變速自行車花轂",
-            "ipc": "B62M 17/00, B62M 11/16, F16H 15/52", "cpc": "",
-            "p1_name": "Target: 自行車與花轂", "p1_en": "bicycle, bike, bicycle hub, wheel hub", "p1_zh": "自行車, 腳踏車, 車轂, 花轂, 輪轂",
-            "p2_name": "Mechanism: 無鏈條傳動與齒輪箱", "p2_en": "chainless, shaft drive, transmission shaft, gearbox, bevel gear", "p2_zh": "無鏈, 軸傳動, 傳動軸, 齒輪箱, 傘齒輪",
-            "p3_name": "Mechanism: 無段變速 (CVT)", "p3_en": "continuously variable, CVT, infinitely variable, friction drive, traction drive", "p3_zh": "無段變速, 無級變速, 摩擦傳動, 球體傳動",
-            "claims": [
-                {"要件編號": "Element 1A", "本案 Claim 1 技術要件": "一固定軸，定義有一中心旋轉軸線", "前案 D1 對應技術": "揭露後輪固定軸心", "前案 D2 對應技術": "揭露中空固定主軸", "符合性判定": "YES (字面讀取)", "差異/進步性說明": "公知構件"},
-                {"要件編號": "Element 1B", "本案 Claim 1 技術要件": "一外輪轂殼體，可相對固定軸旋轉套設", "前案 D1 對應技術": "鋁合金花轂外殼", "前案 D2 對應技術": "車輪外殼體", "符合性判定": "YES (字面讀取)", "差異/進步性說明": "公知構件"},
-                {"要件編號": "Element 1C", "本案 Claim 1 技術要件": "一動力輸入齒輪組，具有封閉箱體內之輸入齒輪", "前案 D1 對應技術": "外露飛輪，無封閉箱體", "前案 D2 對應技術": "傘齒輪組，但未封閉", "符合性判定": "NO (不符/差異點)", "差異/進步性說明": "本案封閉箱體具防塵與扭矩支撐之特殊功效"},
-                {"要件編號": "Element 1D", "本案 Claim 1 技術要件": "一無段變速機構，具複數轉動球體進行傳動調節", "前案 D1 對應技術": "傳統階梯齒輪變速", "前案 D2 對應技術": "球體 CVT 機構", "符合性判定": "待確認", "差異/進步性說明": "與封閉齒輪箱之同軸緊湊整合為主要發明點"}
-            ]
-        })
+
+    st.sidebar.selectbox(
+        "選擇技術模板快速填入：",
+        ["自訂輸入", "多光譜溫室作物病害早期偵測系統", "邊緣運算光學瑕疵檢測"],
+        key="template_select_key",
+        on_change=apply_template
+    )
 
     st.subheader("1. 發明標的名稱與 AI 自動拆解")
     col_input1, col_input2 = st.columns([3, 1])
@@ -788,8 +786,8 @@ with tab_patent:
     with col_input1:
         target_title = st.text_input(
             "請輸入專利標的名稱：",
-            value=st.session_state.form_data["title"],
-            placeholder="例如：晶圓搬運機械手臂動態抑振控制系統"
+            key="patent_title_input",
+            placeholder="例如：晶圓搬運機械手臂動態抑振控制系統 或 多光譜溫室作物病害早期偵測系統"
         )
 
     with col_input2:
@@ -803,34 +801,36 @@ with tab_patent:
         elif not target_title.strip():
             st.warning("請先輸入專利標的名稱。")
         else:
-            with st.spinner("🤖 正在調用 Gemini 拆解技術特徵（含自動指數退避保護）..."):
+            with st.spinner("🤖 正在調用 Gemini 拆解技術特徵（含退避保護機制）..."):
                 try:
                     ai_res = analyze_patent_with_gemini(user_api_key.strip(), target_title.strip())
-                    st.session_state.form_data.update({
-                        "title": target_title.strip(),
-                        "ipc": ai_res.get("ipc", ""),
-                        "cpc": ai_res.get("cpc", ""),
-                        "p1_name": ai_res.get("pillar_a_name", "Target: 應用標的"),
-                        "p1_en": ai_res.get("pillar_a_en", ""),
-                        "p1_zh": ai_res.get("pillar_a_zh", ""),
-                        "p2_name": ai_res.get("pillar_b_name", "Mechanism: 核心手段"),
-                        "p2_en": ai_res.get("pillar_b_en", ""),
-                        "p2_zh": ai_res.get("pillar_b_zh", ""),
-                        "p3_name": ai_res.get("pillar_c_name", "Effect: 技術功效"),
-                        "p3_en": ai_res.get("pillar_c_en", ""),
-                        "p3_zh": ai_res.get("pillar_c_zh", ""),
-                        "claims": ai_res.get("claim_elements", [])
-                    })
-                    st.success("🎉 Gemini AI 拆解完成！相關欄位與 Claim Chart 已自動更新。")
+
+                    # 【核心修正】：直接同步更新綁定到輸入框的所有 Session State Key！
+                    st.session_state["ipc_input_val"] = ai_res.get("ipc", "")
+                    st.session_state["cpc_input_val"] = ai_res.get("cpc", "")
+                    st.session_state["p1_n_val"] = ai_res.get("pillar_a_name", "Target: 應用標的")
+                    st.session_state["p1_e_val"] = ai_res.get("pillar_a_en", "")
+                    st.session_state["p1_z_val"] = ai_res.get("pillar_a_zh", "")
+                    st.session_state["p2_n_val"] = ai_res.get("pillar_b_name", "Mechanism: 核心手段")
+                    st.session_state["p2_e_val"] = ai_res.get("pillar_b_en", "")
+                    st.session_state["p2_z_val"] = ai_res.get("pillar_b_zh", "")
+                    st.session_state["p3_n_val"] = ai_res.get("pillar_c_name", "Effect: 技術功效")
+                    st.session_state["p3_e_val"] = ai_res.get("pillar_c_en", "")
+                    st.session_state["p3_z_val"] = ai_res.get("pillar_c_zh", "")
+                    
+                    if ai_res.get("claim_elements"):
+                        st.session_state["claims_data"] = ai_res.get("claim_elements")
+
+                    st.success("🎉 Gemini AI 拆解完成！三支柱欄位與 Claims 已 100% 同步填入！")
                     st.rerun()
                 except Exception as e:
                     st.error(f"AI 呼叫失敗，請稍後重試。詳細原因: {e}")
 
     col_class1, col_class2 = st.columns(2)
     with col_class1:
-        ipc_input = st.text_input("IPC 分類號 (逗號隔開)", value=st.session_state.form_data["ipc"], placeholder="例: A01G 9/24, G01N 21/84")
+        ipc_input = st.text_input("IPC 分類號 (逗號隔開)", key="ipc_input_val", placeholder="例: A01G 9/24, G01N 21/84")
     with col_class2:
-        cpc_input = st.text_input("CPC 分類號 (逗號隔開)", value=st.session_state.form_data["cpc"], placeholder="例: G06V 20/188")
+        cpc_input = st.text_input("CPC 分類號 (逗號隔開)", key="cpc_input_val", placeholder="例: G06V 20/188")
 
     st.markdown("---")
     st.subheader("2. 技術三支柱特徵拆解")
@@ -838,21 +838,21 @@ with tab_patent:
     col_p1, col_p2, col_p3 = st.columns(3)
     with col_p1:
         st.markdown("#### 支柱 A：應用標的 (Target)")
-        p1_name = st.text_input("支柱 A 名稱", value=st.session_state.form_data["p1_name"], key="p1_n")
-        p1_en = st.text_area("英文關鍵字 (逗號隔開)", value=st.session_state.form_data["p1_en"], key="p1_e", height=100)
-        p1_zh = st.text_area("中文關鍵字 (逗號隔開)", value=st.session_state.form_data["p1_zh"], key="p1_z", height=100)
+        p1_name = st.text_input("支柱 A 名稱", key="p1_n_val")
+        p1_en = st.text_area("英文關鍵字 (逗號隔開)", key="p1_e_val", height=100)
+        p1_zh = st.text_area("中文關鍵字 (逗號隔開)", key="p1_z_val", height=100)
 
     with col_p2:
         st.markdown("#### 支柱 B：核心手段 (Mechanism)")
-        p2_name = st.text_input("支柱 B 名稱", value=st.session_state.form_data["p2_name"], key="p2_n")
-        p2_en = st.text_area("英文關鍵字 (逗號隔開)", value=st.session_state.form_data["p2_en"], key="p2_e", height=100)
-        p2_zh = st.text_area("中文關鍵字 (逗號隔開)", value=st.session_state.form_data["p2_zh"], key="p2_z", height=100)
+        p2_name = st.text_input("支柱 B 名稱", key="p2_n_val")
+        p2_en = st.text_area("英文關鍵字 (逗號隔開)", key="p2_e_val", height=100)
+        p2_zh = st.text_area("中文關鍵字 (逗號隔開)", key="p2_z_val", height=100)
 
     with col_p3:
         st.markdown("#### 支柱 C：技術功效 (Effect)")
-        p3_name = st.text_input("支柱 C 名稱", value=st.session_state.form_data["p3_name"], key="p3_n")
-        p3_en = st.text_area("英文關鍵字 (逗號隔開)", value=st.session_state.form_data["p3_en"], key="p3_e", height=100)
-        p3_zh = st.text_area("中文關鍵字 (逗號隔開)", value=st.session_state.form_data["p3_zh"], key="p3_z", height=100)
+        p3_name = st.text_input("支柱 C 名稱", key="p3_n_val")
+        p3_en = st.text_area("英文關鍵字 (逗號隔開)", key="p3_e_val", height=100)
+        p3_zh = st.text_area("中文關鍵字 (逗號隔開)", key="p3_z_val", height=100)
 
     st.markdown("---")
 
@@ -864,7 +864,7 @@ with tab_patent:
 
     col_fetch1, col_fetch2, col_fetch3 = st.columns([2, 1, 1])
     with col_fetch1:
-        target_pno = st.text_input("前案專利號 (公開號/公告號)：", placeholder="例如：US11234567B2、EP3739504A1、US11373399B2", key="fetch_pno_input")
+        target_pno = st.text_input("前案專利號 (公開號/公告號)：", placeholder="例如：EP3739504A1 或 US11373399B2", key="fetch_pno_input")
     with col_fetch2:
         target_slot = st.selectbox("填入比對欄位：", ["前案 D1 對應技術", "前案 D2 對應技術"], key="fetch_slot_select")
     with col_fetch3:
@@ -881,9 +881,9 @@ with tab_patent:
             with st.spinner(f"🌐 正在爬取 {target_pno.strip()} 並啟動多模型備援比對..."):
                 try:
                     p_data = fetch_patent_data_from_google(target_pno.strip())
-                    st.session_state.last_fetched_patent = p_data
+                    st.session_state["last_fetched_patent"] = p_data
 
-                    curr_claims = st.session_state.form_data.get("claims", [])
+                    curr_claims = st.session_state["claims_data"]
                     if not curr_claims:
                         curr_claims = [
                             {"要件編號": "Element 1A", "本案 Claim 1 技術要件": "主要機構/感測裝置", "前案 D1 對應技術": "", "前案 D2 對應技術": "", "符合性判定": "待確認", "差異/進步性說明": ""},
@@ -901,16 +901,15 @@ with tab_patent:
                             if ai_mappings[idx].get("diff_note"):
                                 row["差異/進步性說明"] = ai_mappings[idx].get("diff_note")
 
-                    st.session_state.form_data["claims"] = curr_claims
+                    st.session_state["claims_data"] = curr_claims
                     st.success(f"✅ 成功擷取專利：【{p_data['patent_no']}】{p_data['title']}，已完成對應比對！")
                     st.rerun()
 
                 except Exception as e:
                     st.error(f"爬取或比對失敗: {e}")
 
-    # 展開檢視爬取之專利原文
-    if st.session_state.last_fetched_patent:
-        last_p = st.session_state.last_fetched_patent
+    if st.session_state["last_fetched_patent"]:
+        last_p = st.session_state["last_fetched_patent"]
         with st.expander(f"📖 查看最近爬取之專利原文：【{last_p['patent_no']}】{last_p['title']}", expanded=True):
             col_info1, col_info2 = st.columns([3, 1])
             with col_info1:
@@ -930,12 +929,8 @@ with tab_patent:
 
     st.markdown("---")
     st.subheader("4. 申請專利範圍全要件比對矩陣 (線上編輯)")
-    current_claims = st.session_state.form_data.get("claims", [])
-    if not current_claims:
-        current_claims = [
-            {"要件編號": "Element 1A", "本案 Claim 1 技術要件": "", "前案 D1 對應技術": "", "前案 D2 對應技術": "", "符合性判定": "待確認", "差異/進步性說明": ""}
-        ]
-
+    current_claims = st.session_state["claims_data"]
+    
     edited_df = st.data_editor(
         pd.DataFrame(current_claims),
         num_rows="dynamic",
@@ -948,12 +943,12 @@ with tab_patent:
             "符合性判定": st.column_config.SelectboxColumn("符合性判定", options=["YES (字面讀取)", "NO (不符/差異點)", "均等成立 (DOE)", "待確認"], width="small"),
             "差異/進步性說明": st.column_config.TextColumn("差異分析 / 進步性技術功效", width="large"),
         },
-        key=f"claim_editor_{template}_{len(current_claims)}"
+        key="claim_editor_live"
     )
 
     col_claim_oa1, col_claim_oa2 = st.columns([2, 1])
     with col_claim_oa1:
-        st.caption("💡 提示：若表格中有被判定為「NO (不符/差異點)」的元件，可直接利用下方按鈕一鍵撰寫《專利法》第22條第2項進步性答辯理由。")
+        st.caption("💡 提示：若表格中有被判定為「NO (不符/差異點)」的元件，可直接利用右方按鈕一鍵撰寫《專利法》第22條第2項進步性答辯理由。")
     with col_claim_oa2:
         quick_oa_btn = st.button("⚖️ 一鍵生成《專利法》第22條進步性申復理由", use_container_width=True)
 
@@ -986,7 +981,7 @@ with tab_patent:
                 except Exception as e:
                     st.error(f"生成失敗: {e}")
 
-    if "last_oa_result" in st.session_state and st.session_state["last_oa_result"]:
+    if st.session_state.get("last_oa_result"):
         with st.expander("📄 檢視最新產出之專利申復答辯理由書", expanded=True):
             st.markdown(st.session_state["last_oa_result"])
             render_copy_button(st.session_state["last_oa_result"], "📋 快速複製申復理由全文", button_id="copyQuickOA")
@@ -1056,14 +1051,11 @@ with tab_patent:
             st.caption("格式：標準 UTF-8 BOM CSV，適合 Excel / 試算表直接編輯與建檔。")
 
 # ==============================================================================
-# TAB 2: 商標權模組 (整合 Logo 上傳圖文合成、多行排版、對齊與行距控制)
+# TAB 2: 商標權模組
 # ==============================================================================
 with tab_trademark:
     st.subheader("🏷️ 商標尼斯分類佈局與 TIPO 規範圖樣產生器")
     st.markdown("評估商標識別性（Distinctiveness）、自動推薦第 09/42 類商品，並支援上傳 Logo 圖片、多行自由換行、對齊排版與行距微調合成符合智財局規範之申請圖檔。")
-
-    if "tm_analysis" not in st.session_state:
-        st.session_state.tm_analysis = None
 
     col_tm1, col_tm2 = st.columns([1, 1])
 
@@ -1080,13 +1072,13 @@ with tab_trademark:
             else:
                 with st.spinner("🤖 正在調用 Gemini 評估商標識別性與分類（含退避保護）..."):
                     try:
-                        st.session_state.tm_analysis = analyze_trademark_with_gemini(user_api_key.strip(), tm_brand.strip(), tm_desc.strip())
+                        st.session_state["tm_analysis"] = analyze_trademark_with_gemini(user_api_key.strip(), tm_brand.strip(), tm_desc.strip())
                         st.success("🎉 商標分析完成！")
                     except Exception as e:
                         st.error(f"分析失敗: {e}")
 
-        if st.session_state.tm_analysis:
-            res = st.session_state.tm_analysis
+        if st.session_state.get("tm_analysis"):
+            res = st.session_state["tm_analysis"]
             st.markdown("---")
             st.markdown("#### 📋 智財審查可行性分析")
             st.info(f"**識別性等級判定**：{res.get('distinctiveness_level', '未知')}\n\n**審查風險備註**：{res.get('legal_risk_analysis', '')}")
@@ -1220,14 +1212,14 @@ with tab_laws:
             "4. 相對人商標未達著名程度：相對人在台並無大量宣傳與市佔實績，不得任意擴大排他範圍跨類阻礙合理周邊商業自由競爭。"
         )
     elif "進步性核駁" in oa_law:
-        default_oa_target = st.session_state.form_data.get("title", "多光譜溫室作物病害早期偵測系統")
+        default_oa_target = st.session_state.get("patent_title_input", "多光譜溫室作物病害早期偵測系統")
         default_oa_grounds = "審查官認為本案 Claim 1 所請技術特徵，為所屬技術領域具通常知識者結合引證案 D1 之監控相機與引證案 D2 之光譜計算演算法所能輕易置換完成，不具進步性。"
         default_oa_diffs = (
             "1. 引證案 D1 僅揭露全光譜 RGB 可見光，並未揭露本案於特定水份與葉綠素吸收窄波段濾波感測。\n"
             "2. 引證案 D2 屬於事後離線電腦批次運算，不具備本案於感測端邊緣推論即時反光補償與定位分區閉迴路噴灑功效，產生難以預期之技術協同效益。"
         )
     elif "新穎性核駁" in oa_law:
-        default_oa_target = st.session_state.form_data.get("title", "專利技術標的")
+        default_oa_target = st.session_state.get("patent_title_input", "專利技術標的")
         default_oa_grounds = "審查官認為本案 Claim 1 技術特徵已被引證案 D1 完全揭露，欠缺新穎性。"
         default_oa_diffs = "引證案 D1 所揭露之構件在物理連結、特定排列組合與實質動作邏輯上，與本案 Claim 1 明確記載之關鍵限制條件不同，依全要件原則並未被其完全讀取。"
     elif "缺乏先天識別性" in oa_law:
@@ -1270,7 +1262,7 @@ with tab_laws:
                 except Exception as e:
                     st.error(f"生成失敗: {e}")
 
-    if "last_oa_result" in st.session_state and st.session_state["last_oa_result"]:
+    if st.session_state.get("last_oa_result"):
         oa_doc = st.session_state["last_oa_result"]
         st.markdown("#### 📄 申復答辯理由書草稿預覽")
         st.markdown(oa_doc)
