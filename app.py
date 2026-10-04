@@ -4,7 +4,10 @@ import pandas as pd
 import json
 import os
 import io
+import re
 import urllib.parse
+import requests
+from bs4 import BeautifulSoup
 from datetime import datetime
 from dataclasses import dataclass, field
 from typing import List, Dict
@@ -19,7 +22,7 @@ except ImportError:
     HAS_GENAI = False
 
 # ==============================================================================
-# 一、 核心資料結構與邏輯 (專利端)
+# 一、 核心資料結構與專利檢索邏輯
 # ==============================================================================
 @dataclass
 class TechnicalPillar:
@@ -143,7 +146,163 @@ class PatentSearchBuilder:
         return "\n".join(lines)
 
 # ==============================================================================
-# 二、 商標圖樣繪製核心邏輯 (符合 TIPO 規範)
+# 二、 專利號爬取與內容解析
+# ==============================================================================
+def fetch_patent_data_from_google(patent_no: str) -> dict:
+    """從 Google Patents 爬取專利名稱、摘要與申請專利範圍"""
+    clean_pno = re.sub(r'[\s\-_/]', '', patent_no).upper()
+    url = f"https://patents.google.com/patent/{clean_pno}/en"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+
+    resp = requests.get(url, headers=headers, timeout=12)
+    if resp.status_code != 200:
+        raise Exception(f"無法取得專利資料 (HTTP {resp.status_code})，請確認專利號碼是否正確。")
+
+    soup = BeautifulSoup(resp.text, "html.parser")
+
+    # 抓取標題
+    title_elem = soup.find("meta", {"name": "DC.title"})
+    title = title_elem["content"].strip() if title_elem and "content" in title_elem.attrs else ""
+    if not title:
+        h1 = soup.find("h1")
+        title = h1.get_text(strip=True) if h1 else clean_pno
+
+    # 抓取摘要
+    abstract_sec = soup.find("section", {"itemprop": "abstract"})
+    abstract = abstract_sec.get_text(separator="\n", strip=True) if abstract_sec else "（未擷取到摘要內容）"
+
+    # 抓取申請專利範圍 (Claims)
+    claims_sec = soup.find("section", {"itemprop": "claims"})
+    claims_text = claims_sec.get_text(separator="\n", strip=True) if claims_sec else ""
+    if not claims_text:
+        # 備用方案：抓取 claim-text
+        c_elems = soup.find_all("div", class_="claim-text")
+        claims_text = "\n".join([c.get_text(strip=True) for c in c_elems[:10]])
+
+    return {
+        "patent_no": clean_pno,
+        "title": title,
+        "abstract": abstract[:2000],
+        "claims": claims_text[:4000],
+        "url": url
+    }
+
+# ==============================================================================
+# 三、 Gemini AI 技術特徵與比對拆解
+# ==============================================================================
+def analyze_patent_with_gemini(api_key: str, title: str) -> dict:
+    """專利特徵與 IPC/CPC 拆解"""
+    client = genai.Client(api_key=api_key)
+    prompt = f"""
+    你是一名專業的專利代理人與資深專利檢索專家。
+    請分析以下發明專利標的名稱，並以繁體中文與專業英文進行技術三支柱拆解、分類號建議與 Claim 1 要件拆解。
+
+    發明標的名稱："{title}"
+
+    請嚴格依照以下 JSON 結構回傳：
+    {{
+        "ipc": "建議的 IPC 分類號，用逗號隔開 (如 A01G 9/24, G01N 21/84)",
+        "cpc": "建議的 CPC 分類號，用逗號隔開",
+        "pillar_a_name": "Target: 標的名稱",
+        "pillar_a_en": "英文關鍵字5~7個，逗號隔開",
+        "pillar_a_zh": "中文同義詞5~7個，逗號隔開",
+        "pillar_b_name": "Mechanism: 核心手段名稱",
+        "pillar_b_en": "英文關鍵字5~7個，逗號隔開",
+        "pillar_b_zh": "中文同義詞5~7個，逗號隔開",
+        "pillar_c_name": "Effect: 技術功效名稱",
+        "pillar_c_en": "英文關鍵字5~7個，逗號隔開",
+        "pillar_c_zh": "中文同義詞5~7個，逗號隔開",
+        "claim_elements": [
+            {{
+                "要件編號": "Element 1A",
+                "本案 Claim 1 技術要件": "具體構件描繪",
+                "前案 D1 對應技術": "",
+                "前案 D2 對應技術": "",
+                "符合性判定": "待確認",
+                "差異/進步性說明": "預估發明點或技術功效說明"
+            }}
+        ]
+    }}
+    """
+    response = client.models.generate_content(
+        model='gemini-3.8-flash',
+        contents=prompt,
+        config=types.GenerateContentConfig(response_mime_type="application/json")
+    )
+    return json.loads(response.text)
+
+def map_prior_art_with_gemini(api_key: str, current_elements: list, prior_art_data: dict, target_col: str) -> list:
+    """使用 Gemini 將爬取之前案內容與目前 Claim 1 各要件進行比對"""
+    client = genai.Client(api_key=api_key)
+    prompt = f"""
+    你是一名資深專利代理人，正在執行「全要件原則（All-Elements Rule）」專利侵權與新穎性/進步性比對。
+    
+    【本案 Claim 1 現有要件清單】：
+    {json.dumps(current_elements, ensure_ascii=False, indent=2)}
+
+    【爬取到的引證前案資訊】：
+    專利號：{prior_art_data['patent_no']}
+    發明名稱：{prior_art_data['title']}
+    摘要：{prior_art_data['abstract']}
+    專利範圍：{prior_art_data['claims'][:3000]}
+
+    請仔細研讀前案內容，針對本案上述每一個要件（Element），提取該前案中是否有相對應之技術構件。
+    請嚴格回傳一個 JSON 陣列，長度必須與本案要件清單完全相同，格式如下：
+    [
+        {{
+            "matched_tech": "前案在此要件揭露的具體對應構件或手段（若未揭露請寫『未揭露』）",
+            "judgment": "YES (字面讀取) / NO (不符/差異點) / 均等成立 (DOE)",
+            "diff_note": "針對該要件之差異分析或進步性技術功效"
+        }}
+    ]
+    """
+    response = client.models.generate_content(
+        model='gemini-3.8-flash',
+        contents=prompt,
+        config=types.GenerateContentConfig(response_mime_type="application/json")
+    )
+    return json.loads(response.text)
+
+def analyze_trademark_with_gemini(api_key: str, brand_name: str, product_desc: str) -> dict:
+    """商標識別性評估與尼斯分類對應"""
+    client = genai.Client(api_key=api_key)
+    prompt = f"""
+    你是一名專業的商標代理人與智財法務專家。
+    請分析以下商標名稱與其應用之產品/服務，評估其於台灣智慧財產局 (TIPO) 之申請可行性：
+
+    商標名稱："{brand_name}"
+    產品/技術描述："{product_desc}"
+
+    請嚴格依照以下 JSON 結構回傳：
+    {{
+        "distinctiveness_level": "獨創性(Fanciful) / 任意性(Arbitrary) / 暗示性(Suggestive) / 說明性(Descriptive)",
+        "legal_risk_analysis": "針對該名稱之核駁風險與審查注意事項簡析 (100字內)",
+        "nice_classes": [
+            {{
+                "class_num": "第 09 類",
+                "group_codes": "0901, 0904",
+                "recommended_items": "光學感測儀器、農業用病害監測軟體、邊緣運算處理器"
+            }},
+            {{
+                "class_num": "第 42 類",
+                "group_codes": "4209",
+                "recommended_items": "軟體即服務(SaaS)、農業光學數據分析、雲端推論平台"
+            }}
+        ],
+        "clearance_search_keywords": "建議於 TIPO 檢索時比對的文字或同音異字 (逗號隔開)"
+    }}
+    """
+    response = client.models.generate_content(
+        model='gemini-3.8-flash',
+        contents=prompt,
+        config=types.GenerateContentConfig(response_mime_type="application/json")
+    )
+    return json.loads(response.text)
+
+# ==============================================================================
+# 四、 商標圖樣繪製核心邏輯 (符合 TIPO 規範)
 # ==============================================================================
 def create_tipo_trademark_bytes(text: str, layout: str = "單行水平置中", font_size: int = 76) -> bytes:
     """產生符合 TIPO 電子送件 8x8 cm 300DPI 規格之 JPEG bytes"""
@@ -203,87 +362,7 @@ def create_tipo_trademark_bytes(text: str, layout: str = "單行水平置中", f
     return img_buffer.getvalue()
 
 # ==============================================================================
-# 三、 Gemini AI 自動分析輔助函式 (升級至 gemini-3.8-flash)
-# ==============================================================================
-def analyze_patent_with_gemini(api_key: str, title: str) -> dict:
-    """專利特徵與 IPC/CPC 拆解"""
-    client = genai.Client(api_key=api_key)
-    prompt = f"""
-    你是一名專業的專利代理人與資深專利檢索專家。
-    請分析以下發明專利標的名稱，並以繁體中文與專業英文進行技術三支柱拆解、分類號建議與 Claim 1 要件拆解。
-
-    發明標的名稱："{title}"
-
-    請嚴格依照以下 JSON 結構回傳：
-    {{
-        "ipc": "建議的 IPC 分類號，用逗號隔開 (如 A01G 9/24, G01N 21/84)",
-        "cpc": "建議的 CPC 分類號，用逗號隔開",
-        "pillar_a_name": "Target: 標的名稱",
-        "pillar_a_en": "英文關鍵字5~7個，逗號隔開",
-        "pillar_a_zh": "中文同義詞5~7個，逗號隔開",
-        "pillar_b_name": "Mechanism: 核心手段名稱",
-        "pillar_b_en": "英文關鍵字5~7個，逗號隔開",
-        "pillar_b_zh": "中文同義詞5~7個，逗號隔開",
-        "pillar_c_name": "Effect: 技術功效名稱",
-        "pillar_c_en": "英文關鍵字5~7個，逗號隔開",
-        "pillar_c_zh": "中文同義詞5~7個，逗號隔開",
-        "claim_elements": [
-            {{
-                "要件編號": "Element 1A",
-                "本案 Claim 1 技術要件": "具體構件描繪",
-                "前案 D1 對應技術": "常見習知技術或空白",
-                "前案 D2 對應技術": "常見習知技術或空白",
-                "符合性判定": "待確認",
-                "差異/進步性說明": "預估發明點或技術功效說明"
-            }}
-        ]
-    }}
-    """
-    response = client.models.generate_content(
-        model='gemini-3.8-flash',
-        contents=prompt,
-        config=types.GenerateContentConfig(response_mime_type="application/json")
-    )
-    return json.loads(response.text)
-
-def analyze_trademark_with_gemini(api_key: str, brand_name: str, product_desc: str) -> dict:
-    """商標識別性評估與尼斯分類對應"""
-    client = genai.Client(api_key=api_key)
-    prompt = f"""
-    你是一名專業的商標代理人與智財法務專家。
-    請分析以下商標名稱與其應用之產品/服務，評估其於台灣智慧財產局 (TIPO) 之申請可行性：
-
-    商標名稱："{brand_name}"
-    產品/技術描述："{product_desc}"
-
-    請嚴格依照以下 JSON 結構回傳：
-    {{
-        "distinctiveness_level": "獨創性(Fanciful) / 任意性(Arbitrary) / 暗示性(Suggestive) / 說明性(Descriptive)",
-        "legal_risk_analysis": "針對該名稱之核駁風險與審查注意事項簡析 (100字內)",
-        "nice_classes": [
-            {{
-                "class_num": "第 09 類",
-                "group_codes": "0901, 0904",
-                "recommended_items": "光學感測儀器、農業用病害監測軟體、邊緣運算處理器"
-            }},
-            {{
-                "class_num": "第 42 類",
-                "group_codes": "4209",
-                "recommended_items": "軟體即服務(SaaS)、農業光學數據分析、雲端推論平台"
-            }}
-        ],
-        "clearance_search_keywords": "建議於 TIPO 檢索時比對的文字或同音異字 (逗號隔開)"
-    }}
-    """
-    response = client.models.generate_content(
-        model='gemini-3.8-flash',
-        contents=prompt,
-        config=types.GenerateContentConfig(response_mime_type="application/json")
-    )
-    return json.loads(response.text)
-
-# ==============================================================================
-# 四、 複製輔助元件 (Clipboard)
+# 五、 複製輔助元件 (Clipboard)
 # ==============================================================================
 def render_copy_button(text_to_copy: str, button_label: str = "📋 點擊複製", button_id: str = "copyBtn"):
     escaped_text = text_to_copy.replace("\\", "\\\\").replace("`", "\\`").replace("$", "\\$")
@@ -324,18 +403,18 @@ def render_copy_button(text_to_copy: str, button_label: str = "📋 點擊複製
     components.html(html_code, height=50)
 
 # ==============================================================================
-# 五、 Streamlit 介面配置
+# 六、 Streamlit 介面配置
 # ==============================================================================
 st.set_page_config(
-    page_title="智慧財產權整合工作台 (專利檢索 ＆ 商標佈局)",
+    page_title="智慧財產權整合工作台 (專利 ＆ 商標)",
     page_icon="🛡️",
     layout="wide"
 )
 
 st.title("🛡️ 智慧財產權整合工作台 (專利 ＆ 商標)")
-st.markdown("結合 **Google Patents 邏輯檢索**、**Claims 全要件比對矩陣**、**商標尼斯分類智慧佈局** 與 **TIPO 規範圖樣生成**。")
+st.markdown("結合 **Google Patents 邏輯檢索**、**專利號自動爬取對應**、**Claims 全要件比對矩陣** 與 **TIPO 規範圖樣生成**。")
 
-# --- 側邊欄設定 ---
+# 側邊欄金鑰設定
 st.sidebar.header("🔑 Gemini API 設定")
 secret_key = ""
 if "GEMINI_API_KEY" in st.secrets:
@@ -350,7 +429,6 @@ user_api_key = st.sidebar.text_input(
     help="可在 Google AI Studio (aistudio.google.com) 免費申請 API Key。"
 )
 
-# 頂部導覽分頁
 tab_patent, tab_trademark = st.tabs(["📄 專利檢索與 Claims 比對矩陣", "🏷️ 商標權佈局與圖樣生成器"])
 
 # ==============================================================================
@@ -401,11 +479,11 @@ with tab_patent:
         })
     elif template == "邊緣運算光學瑕疵檢測":
         st.session_state.form_data.update({
-            "title": "基於邊緣運算之即時影像瑕疵檢測系統",
-            "ipc": "G06T 7/00, G01N 21/88", "cpc": "G06V 10/00",
-            "p1_name": "Target: 瑕疵檢測", "p1_en": "defect detection, flaw inspection, surface anomaly", "p1_zh": "瑕疵檢測, 缺陷檢驗, 表面異常",
-            "p2_name": "Mechanism: 邊緣運算與視覺推論", "p2_en": "edge computing, neural network, real-time inferenc*", "p2_zh": "邊緣運算, 神經網絡, 即時推論, 深度學習",
-            "p3_name": "Effect: 低延遲與高精度", "p3_en": "low latency, high throughput, false positive reduction", "p3_zh": "低延遲, 降低誤判, 即時處理",
+            "title": "基於邊緣運算之即時影像瑕疵檢測系統"[cite: 1],
+            "ipc": "G06T 7/00, G01N 21/88"[cite: 1], "cpc": "G06V 10/00"[cite: 1],
+            "p1_name": "Target: 瑕疵檢測"[cite: 1], "p1_en": "defect detection, flaw inspection, surface anomaly"[cite: 1], "p1_zh": "瑕疵檢測, 缺陷檢驗, 表面異常"[cite: 1],
+            "p2_name": "Mechanism: 邊緣運算與視覺推論"[cite: 1], "p2_en": "edge computing, neural network, real-time inferenc*"[cite: 1], "p2_zh": "邊緣運算, 神經網絡, 即時推論, 深度學習"[cite: 1],
+            "p3_name": "Effect: 低延遲與高精度"[cite: 1], "p3_en": "low latency, high throughput, false positive reduction"[cite: 1], "p3_zh": "低延遲, 降低誤判, 即時處理"[cite: 1],
             "claims": [
                 {"要件編號": "Element 1A", "本案 Claim 1 技術要件": "一工業高速相機，擷取產線物件表面光學影像", "前案 D1 對應技術": "CCD 線型感測器", "前案 D2 對應技術": "面陣相機", "符合性判定": "YES (字面讀取)", "差異/進步性說明": "公知取像構件"},
                 {"要件編號": "Element 1B", "本案 Claim 1 技術要件": "一邊緣推論加速模組，具備特定神經網路剪枝架構", "前案 D1 對應技術": "工控機 GPU 集中運算", "前案 D2 對應技術": "雲端伺服器推論", "符合性判定": "NO (不符/差異點)", "差異/進步性說明": "邊緣端低功耗輕量化推論"},
@@ -500,7 +578,63 @@ with tab_patent:
         p3_zh = st.text_area("中文關鍵字 (逗號隔開)", value=st.session_state.form_data["p3_zh"], key="p3_z", height=100)
 
     st.markdown("---")
-    st.subheader("3. 申請專利範圍全要件比對矩陣 (線上編輯)")
+
+    # ==========================================================================
+    # 專利號自動爬取與 Claim Chart 欄位對應
+    # ==========================================================================
+    st.subheader("3. 引證前案專利號爬取與自動比對 (Auto-fetch Prior Art)")
+    st.caption("輸入引證案公開/公告號（支援 US、EP、WO、TW 等），自動自 Google Patents 爬取內容，並由 AI 比對填入下表指定的前案欄位。")
+
+    col_fetch1, col_fetch2, col_fetch3 = st.columns([2, 1, 1])
+    with col_fetch1:
+        target_pno = st.text_input("前案專利號 (公開號/公告號)：", placeholder="例如：US11234567B2、EP3567890A1、US20230012345A1", key="fetch_pno_input")
+    with col_fetch2:
+        target_slot = st.selectbox("填入比對欄位：", ["前案 D1 對應技術", "前案 D2 對應技術"], key="fetch_slot_select")
+    with col_fetch3:
+        st.write("")
+        st.write("")
+        fetch_btn = st.button("📥 爬取並自動填入", type="secondary", use_container_width=True)
+
+    if fetch_btn:
+        if not target_pno.strip():
+            st.warning("請先輸入前案專利號。")
+        elif not user_api_key.strip():
+            st.error("自動技術特徵拆解需要 Gemini API Key，請先於左側側邊欄填入！")
+        else:
+            with st.spinner(f"🌐 正在從 Google Patents 爬取 {target_pno.strip()} 並進行 Claims 全要件比對..."):
+                try:
+                    p_data = fetch_patent_data_from_google(target_pno.strip())
+                    st.success(f"✅ 成功擷取專利：【{p_data['patent_no']}】{p_data['title']}")
+
+                    # 取得目前已有的 Claim 要件清單
+                    curr_claims = st.session_state.form_data.get("claims", [])
+                    if not curr_claims:
+                        curr_claims = [
+                            {"要件編號": "Element 1A", "本案 Claim 1 技術要件": "主要機構/感測裝置", "前案 D1 對應技術": "", "前案 D2 對應技術": "", "符合性判定": "待確認", "差異/進步性說明": ""},
+                            {"要件編號": "Element 1B", "本案 Claim 1 技術要件": "運算處理/特徵提取", "前案 D1 對應技術": "", "前案 D2 對應技術": "", "符合性判定": "待確認", "差異/進步性說明": ""},
+                            {"要件編號": "Element 1C", "本案 Claim 1 技術要件": "輸出控制/閉迴路連動", "前案 D1 對應技術": "", "前案 D2 對應技術": "", "符合性判定": "待確認", "差異/進步性說明": ""}
+                        ]
+
+                    # AI 比對對應
+                    ai_mappings = map_prior_art_with_gemini(user_api_key.strip(), curr_claims, p_data, target_slot)
+
+                    for idx, row in enumerate(curr_claims):
+                        if idx < len(ai_mappings):
+                            row[target_slot] = f"[{p_data['patent_no']}] " + ai_mappings[idx].get("matched_tech", "")
+                            # 若有判定結果則寫入
+                            if ai_mappings[idx].get("judgment"):
+                                row["符合性判定"] = ai_mappings[idx].get("judgment")
+                            if ai_mappings[idx].get("diff_note"):
+                                row["差異/進步性說明"] = ai_mappings[idx].get("diff_note")
+
+                    st.session_state.form_data["claims"] = curr_claims
+                    st.rerun()
+
+                except Exception as e:
+                    st.error(f"爬取或比對失敗: {e}")
+
+    st.markdown("---")
+    st.subheader("4. 申請專利範圍全要件比對矩陣 (線上編輯)")
     current_claims = st.session_state.form_data.get("claims", [])
     if not current_claims:
         current_claims = [
@@ -514,8 +648,8 @@ with tab_patent:
         column_config={
             "要件編號": st.column_config.TextColumn("要件編號", width="small", required=True),
             "本案 Claim 1 技術要件": st.column_config.TextColumn("本案 Claim 1 技術要件", width="medium"),
-            "前案 D1 對應技術": st.column_config.TextColumn("前案 D1 [專利號:________]", width="medium"),
-            "前案 D2 對應技術": st.column_config.TextColumn("前案 D2 [專利號:________]", width="medium"),
+            "前案 D1 對應技術": st.column_config.TextColumn("前案 D1 對應技術", width="medium"),
+            "前案 D2 對應技術": st.column_config.TextColumn("前案 D2 對應技術", width="medium"),
             "符合性判定": st.column_config.SelectboxColumn("符合性判定", options=["YES (字面讀取)", "NO (不符/差異點)", "均等成立 (DOE)", "待確認"], width="small"),
             "差異/進步性說明": st.column_config.TextColumn("差異分析 / 進步性技術功效", width="large"),
         },
@@ -595,7 +729,6 @@ with tab_trademark:
                     except Exception as e:
                         st.error(f"分析失敗: {e}")
 
-        # AI 分析結果呈現
         if st.session_state.tm_analysis:
             res = st.session_state.tm_analysis
             st.markdown("---")
@@ -618,7 +751,6 @@ with tab_trademark:
         layout_choice = st.radio("圖樣排版方式：", ["單行水平置中", "上下雙行置中"], horizontal=True)
         font_size_val = st.slider("字級大小 (Font Size)：", min_value=40, max_value=120, value=76, step=2)
 
-        # 動態繪製圖樣
         if tm_brand.strip():
             img_bytes = create_tipo_trademark_bytes(tm_brand.strip(), layout=layout_choice, font_size=font_size_val)
             st.image(img_bytes, caption="📸 圖樣預覽 (8x8 cm @ 300 DPI 標準白底黑字)", width=320)
@@ -632,6 +764,6 @@ with tab_trademark:
                 type="primary",
                 use_container_width=True
             )
-            st.caption("💡 說明：此 JPG 圖檔可直接於智慧局 E-filing 電子送件系統中作為正式商標圖樣上傳，無須另外後製轉檔。")
+            st.caption("💡 說明：此 JPG 圖檔可直接於智慧局 E-filing 電子送件系統中作為正式商標圖樣上傳。")
         else:
             st.warning("請先於左側輸入商標名稱以生成圖樣。")
