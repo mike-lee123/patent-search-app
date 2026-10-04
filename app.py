@@ -345,23 +345,23 @@ def generate_oa_response_with_gemini(api_key: str, law_article: str, target_name
     """自動撰寫智財局核駁審查意見申復理由書草稿"""
     client = genai.Client(api_key=api_key)
     prompt = f"""
-    你是一名台灣資深專利師/專利代理人與商標法務主管。
-    請依據台灣《經濟部智慧財產局（TIPO）》的官方審查基準與法定格式，針對下列核駁審查意見通知函（Office Action），撰寫一份結構嚴謹、條理分明、具高度說服力的【申復理由書（草稿）】。
+    你是一名台灣資深專利代理人與商標代理人。
+    請依據台灣《經濟部智慧財產局（TIPO）》官方審查基準與法定申復書規格，針對下列核駁審查意見通知函（Office Action）或爭議指控，撰寫一份結構嚴謹、條理分明、具高度法理說服力的【申復/答辯理由書（草稿）】。
 
-    【引用核駁法條】：{law_article}
-    【案名/標的名稱】：{target_name}
-    【審查官核駁理由摘要】：{rejection_grounds}
-    【申請人主張之差異事實與進步點】：{diff_facts}
+    【引用法條/爭議事由】：{law_article}
+    【本案標的名稱/對造商標】：{target_name}
+    【核駁或指控理由摘要】：{rejection_grounds}
+    【申請人/答辯人主張之實體差異事實與論據】：{diff_facts}
 
     請使用正式專利/商標法律繁體中文撰寫，內容必須包含以下章節架構：
-    一、案由與前言說明（載明申復標的與主張）
-    二、法規意旨與審查基準法理依據（引述該法條立法意旨與最高行政法院/智慧局審查要點）
-    三、爭點具體比對與申復理由：
-        1. 技術特徵/商標外觀觀念讀音之顯著差異比對
-        2. 克服核駁條款之核心論據（例如：非所屬技術領域具通常知識者所能輕易完成、難以預期之技術功效、不致使消費者產生混淆誤認等）
-    四、結論與懇請事項（懇請審查官准予專利核准審定 / 准予商標註冊）
+    一、案由與前言聲明（明確載明答辯標的與訴求）
+    二、法規意旨與審查基準法理依據（引述該法條立法意旨與智慧局審查基準）
+    三、爭點具體比對與實體答辯理由：
+        1. 技術特徵/商品性質、功能用途、材料領域之顯著區隔
+        2. 克服核駁或侵權要件之核心論據（若涉及商標，需著重於商品非類似、尼斯分類分流、專業購買者注意程度、產製主體無跨界通念等；若涉及專利，需著重於非顯而易知性與協同功效）
+    四、結論與懇請事項（懇請審查官/主管機關准予核准審定 / 駁回異議訴求）
 
-    請直接輸出完整排版格式的申復理由書。
+    請直接輸出完整排版格式的申復答辯理由書。
     """
     return generate_with_fallback(client, prompt, as_json=False)
 
@@ -933,6 +933,46 @@ with tab_patent:
         key=f"claim_editor_{template}_{len(current_claims)}"
     )
 
+    col_claim_oa1, col_claim_oa2 = st.columns([2, 1])
+    with col_claim_oa1:
+        st.caption("💡 提示：若表格中有被判定為「NO (不符/差異點)」的元件，可直接利用下方按鈕一鍵撰寫《專利法》第22條第2項進步性答辯理由。")
+    with col_claim_oa2:
+        quick_oa_btn = st.button("⚖️ 一鍵生成《專利法》第22條進步性申復理由", use_container_width=True)
+
+    if quick_oa_btn:
+        if not user_api_key.strip():
+            st.error("請先於左側側邊欄輸入有效的 Gemini API Key！")
+        else:
+            with st.spinner("🤖 正在自比對矩陣提煉差異點，撰寫專利法第22條進步性申復理由書..."):
+                diff_rows = []
+                for _, r in edited_df.iterrows():
+                    elem = r.get("要件編號", "")
+                    claim_desc = r.get("本案 Claim 1 技術要件", "")
+                    d1_desc = r.get("前案 D1 對應技術", "")
+                    diff_note = r.get("差異/進步性說明", "")
+                    diff_rows.append(f"【{elem}】本案要件：{claim_desc}；前案技術：{d1_desc}；差異與進步功效：{diff_note}")
+
+                diff_summary = "\n".join(diff_rows)
+                rejection_summary = "審查官認為本案 Claim 1 技術要件已被引證前案揭露或為所屬技術領域具通常知識者所能輕易組合完成，認定欠缺進步性。"
+                
+                try:
+                    quick_oa_res = generate_oa_response_with_gemini(
+                        user_api_key.strip(),
+                        "專利法第 22 條第 2 項（進步性核駁）",
+                        target_title if target_title else "本發明專利申請案",
+                        rejection_summary,
+                        diff_summary
+                    )
+                    st.session_state["last_oa_result"] = quick_oa_res
+                    st.success("🎉 進步性申復理由書產生完成！請至下方預覽或切換至法規分頁查看。")
+                except Exception as e:
+                    st.error(f"生成失敗: {e}")
+
+    if "last_oa_result" in st.session_state and st.session_state["last_oa_result"]:
+        with st.expander("📄 檢視最新產出之專利申復答辯理由書", expanded=True):
+            st.markdown(st.session_state["last_oa_result"])
+            render_copy_button(st.session_state["last_oa_result"], "📋 快速複製申復理由全文", button_id="copyQuickOA")
+
     st.markdown("---")
     if st.button("🚀 生成專利檢索式並整合比對報告", type="primary", use_container_width=True):
         builder = PatentSearchBuilder(target_title if target_title else "未命名技術標的")
@@ -1081,7 +1121,7 @@ with tab_trademark:
 # TAB 3: 智財法規速查 ＆ AI 申復答辯理由草稿生成器
 # ==============================================================================
 with tab_laws:
-    st.subheader("⚖️ 專利法與商標法關鍵條文速查指南")
+    st.subheader("⚖️️ 專利法與商標法關鍵條文速查指南")
     st.markdown("快速檢索與參考台灣**《專利法》**與**《商標法》**核心條文、審查基準要點，並可由 **AI 一鍵模擬撰寫審查意見申復答辯書**。")
 
     col_filter1, col_filter2 = st.columns([1, 2])
@@ -1114,50 +1154,66 @@ with tab_laws:
             st.info(item["explanation"])
 
     # --------------------------------------------------------------------------
-    # AI 申復答辯理由書撰寫模組
+    # AI 申復答辯理由書撰寫模組 (含商品非類似/不致混淆全新範本)
     # --------------------------------------------------------------------------
     st.markdown("---")
     st.subheader("🤖 AI 智財局審查意見申復理由書產生器 (OA Response Generator)")
-    st.caption("遭遇智慧財產局審查意見通知函（Office Action）核駁時，可依據審查官引用之法條與引證案事實，一鍵生成代理人等級的專業申復答辯書草稿。")
+    st.caption("遭遇智慧財產局審查意見通知函（Office Action）核駁或異議爭議時，可依據引證案事實與抗辯要點，一鍵生成代理人規格之申復答辯理由書。")
+
+    # 範本快速預填切換
+    oa_template_options = [
+        "商標法第 30 條第 1 項第 10 款（商品非類似/不致混淆抗辯 - 例: 音箱 vs. 展示架）",
+        "專利法第 22 條第 2 項（進步性核駁 / 容易思及完成）",
+        "專利法第 22 條第 1 項（新穎性核駁 / 單一前案已揭露）",
+        "專利法第 26 條第 1/2 項（說明書未充分揭露 / Claims 不明確）",
+        "商標法第 29 條第 1 項（缺乏先天識別性 / 說明性用語抗辯）",
+        "商標法第 30 條第 1 項第 11 款（著名商標淡化 / 減損信譽抗辯）"
+    ]
+    oa_law = st.selectbox("選擇審查意見/爭議所適用的法定條款範本：", oa_template_options)
+
+    # 根據選取之範本自動準備預設內容
+    if "商品非類似/不致混淆抗辯" in oa_law:
+        default_oa_target = "本案「Lakis」音箱展示架 vs. 美商「Lakis」音箱 (揚聲器)"
+        default_oa_grounds = (
+            "相對人（美商 Lakis 音響公司）指控答辯人於國內生產銷售音箱專用展示架命名為「Lakis」，"
+            "商標文字完全相同，且展示架與音箱具周邊配套關係，認為構成《商標法》第 30 條第 1 項第 10 款及第 68 條之商品類似且有致混淆誤認之虞。"
+        )
+        default_oa_diffs = (
+            "1. 商品性質與功能用途截然有別：音箱（第09類）為精密電聲轉換播放電氣器材；展示架（第20/06類）為物理性支撐承重及陳列減震之五金家具結構件，功能與材料科學全然不同。\n"
+            "2. 產製主體領域分流，無跨界常態：音響原廠通常不兼營家具板金製造，消費者對音響本體與陳列腳架產製主體分離具有充分市場通念。\n"
+            "3. 專業購買者注意程度極高：選購音箱展示架多為音響愛好者或專業工程人員，對機械規格、尺寸、承重與產地極為敏銳，施以較高注意，不致混淆來源。\n"
+            "4. 相對人商標未達著名程度：相對人在台並無大量宣傳與市佔實績，不得任意擴大排他範圍跨類阻礙合理周邊商業自由競爭。"
+        )
+    elif "進步性核駁" in oa_law:
+        default_oa_target = st.session_state.form_data.get("title", "多光譜溫室作物病害早期偵測系統")
+        default_oa_grounds = "審查官認為本案 Claim 1 所請技術特徵，為所屬技術領域具通常知識者結合引證案 D1 之監控相機與引證案 D2 之光譜計算演算法所能輕易置換完成，不具進步性。"
+        default_oa_diffs = (
+            "1. 引證案 D1 僅揭露全光譜 RGB 可見光，並未揭露本案於特定水份與葉綠素吸收窄波段濾波感測。\n"
+            "2. 引證案 D2 屬於事後離線電腦批次運算，不具備本案於感測端邊緣推論即時反光補償與定位分區閉迴路噴灑功效，產生難以預期之技術協同效益。"
+        )
+    elif "新穎性核駁" in oa_law:
+        default_oa_target = st.session_state.form_data.get("title", "專利技術標的")
+        default_oa_grounds = "審查官認為本案 Claim 1 技術特徵已被引證案 D1 完全揭露，欠缺新穎性。"
+        default_oa_diffs = "引證案 D1 所揭露之構件在物理連結、特定排列組合與實質動作邏輯上，與本案 Claim 1 明確記載之關鍵限制條件不同，依全要件原則並未被其完全讀取。"
+    elif "缺乏先天識別性" in oa_law:
+        default_oa_target = "擬申請商標名稱"
+        default_oa_grounds = "審查官認為本件商標文字直接說明所指定商品/服務之品質、功能或用途，缺乏先天識別性。"
+        default_oa_diffs = "本件商標文字具獨創隱喻或暗示意境（Suggestive），非產品功能之直接描述；且申請人經長期投入商業宣傳，在交易上已足以表彰商品來源並取得後天識別性。"
+    else:
+        default_oa_target = "商標標的名稱"
+        default_oa_grounds = "審查官或異議人主張商標有致消費者混淆或減損著名商標信譽之虞。"
+        default_oa_diffs = "兩造商標於外觀、觀念及讀音具顯著區隔，且指定商品市場通路、消費客群互殊，無致混淆誤認或淡化信譽之虞。"
 
     col_oa1, col_oa2 = st.columns(2)
     with col_oa1:
-        oa_law = st.selectbox(
-            "選擇審查官引用的核駁條款：",
-            [
-                "專利法第 22 條第 2 項（進步性核駁 / 容易思及完成）",
-                "專利法第 22 條第 1 項（新穎性核駁 / 單一前案已揭露）",
-                "專利法第 26 條第 1/2 項（說明書未充分揭露 / Claims 不明確）",
-                "商標法第 30 條第 1 項第 10 款（與前案商標近似且有混淆誤認之虞）",
-                "商標法第 29 條第 1 項（缺乏先天識別性 / 說明性用語）",
-                "商標法第 30 條第 1 項第 11 款（著名商標淡化 / 減損信譽）"
-            ]
-        )
-
-        default_target_name = st.session_state.form_data.get("title", "") if "專利法" in oa_law else "葉語 SpectrIQ"
-        oa_target = st.text_input("本案專利標的 / 商標名稱：", value=default_target_name, placeholder="例如：多光譜溫室作物病害早期偵測系統")
-
-        oa_grounds = st.text_area(
-            "審查意見（核駁理由）主要內容：",
-            value="審查官認為本案 Claim 1 所請技術特徵，為所屬技術領域具通常知識者結合引證案 D1 之監控相機與引證案 D2 之光譜計算演算法所能輕易置換完成，不具進步性。" if "專利法" in oa_law else "審查官認為本件商標由文字「葉語」構成，指定於第 09 類農業感測儀器，直接說明商品用途，且與註冊在先之第 01234567 號「夜語」商標讀音完全相同，易致消費者混淆誤認。",
-            height=100
-        )
+        oa_target = st.text_input("本案專利標的 / 商標名稱（可自訂）：", value=default_oa_target)
+        oa_grounds = st.text_area("審查意見通知函（核駁/異議理由）主要指控：", value=default_oa_grounds, height=130)
 
     with col_oa2:
-        # 自動提取 Claim 表格中的進步性特徵作為預設事實
-        default_diffs = ""
-        claims_list = st.session_state.form_data.get("claims", [])
-        if "專利法" in oa_law and claims_list:
-            diff_notes = [f"{c.get('要件編號')}: {c.get('差異/進步性說明')}" for c in claims_list if c.get('差異/進步性說明')]
-            if diff_notes:
-                default_diffs = "；\n".join(diff_notes[:3])
-        if not default_diffs:
-            default_diffs = "1. 引證案 D1 僅揭露全光譜 RGB 可見光，並未揭露本案於特定水份吸收窄波段濾波感測。\n2. 引證案 D2 屬於事後 MATLAB 離線批次運算，不具備本案邊緣推論即時反光補償與定位分區閉迴路噴灑功效，產生難以預期之技術協同效益。" if "專利法" in oa_law else "1. 本件商標「葉語 SpectrIQ」兼具英文與中文字，且「葉語」賦予植物擬人化意境，屬暗示性或任意性標識，非單純產品說明。\n2. 引證案文字為「夜語」，概念指夜間交談，本件「葉語」重在植物葉片狀態，外觀與觀念截然不同，且指定商品市場通路有別，不致混淆。"
+        oa_diffs = st.text_area("申請人/答辯人主張之實體論據（技術功效 / 跨類不致混淆事實）：", value=default_oa_diffs, height=195)
 
-        oa_diffs = st.text_area("申請人主張之差異點與實體論據（技術功效 / 外觀觀念區隔）：", value=default_diffs, height=170)
-
-        st.write("")
-        gen_oa_btn = st.button("✨ 產生申復答辯理由書草稿", type="primary", use_container_width=True)
+    st.write("")
+    gen_oa_btn = st.button("✨ 產生申復答辯理由書草稿", type="primary", use_container_width=True)
 
     if gen_oa_btn:
         if not user_api_key.strip():
@@ -1165,7 +1221,7 @@ with tab_laws:
         elif not oa_target.strip():
             st.warning("請填寫標的名稱。")
         else:
-            with st.spinner("🤖 正在調用 Gemini（法務代理人引擎）撰寫專業申復理由書..."):
+            with st.spinner("🤖 正在調用 Gemini（智財代理人引擎）撰寫專業申復理由書..."):
                 try:
                     oa_result = generate_oa_response_with_gemini(
                         user_api_key.strip(),
@@ -1175,13 +1231,13 @@ with tab_laws:
                         oa_diffs.strip()
                     )
                     st.session_state["last_oa_result"] = oa_result
-                    st.success("🎉 申復理由書草稿產生完成！")
+                    st.success("🎉 申復答辯理由書草稿產生完成！")
                 except Exception as e:
                     st.error(f"生成失敗: {e}")
 
     if "last_oa_result" in st.session_state and st.session_state["last_oa_result"]:
         oa_doc = st.session_state["last_oa_result"]
-        st.markdown("#### 📄 申復理由書草稿預覽")
+        st.markdown("#### 📄 申復答辯理由書草稿預覽")
         st.markdown(oa_doc)
 
         col_oa_copy, col_oa_dl = st.columns(2)
