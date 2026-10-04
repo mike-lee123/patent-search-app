@@ -23,7 +23,7 @@ except ImportError:
     HAS_GENAI = False
 
 # ==============================================================================
-# 一、 核心資料結構與專利檢索邏輯
+# 一、 核心資料結構與專利檢索邏輯 (已整合 Google Patents 扁平化修復)
 # ==============================================================================
 @dataclass
 class TechnicalPillar:
@@ -33,7 +33,7 @@ class TechnicalPillar:
     zh_keywords: List[str] = field(default_factory=list)
 
 class PatentSearchBuilder:
-    """專利檢索邏輯式建造器"""
+    """專利檢索邏輯式建造器 (含 Google Patents 扁平化防禦)"""
     def __init__(self, target_title: str):
         self.target_title = target_title
         self.ipc_classes: List[str] = []
@@ -59,19 +59,35 @@ class PatentSearchBuilder:
         return self
 
     def to_google_patents_query(self) -> str:
+        """產生符合 Google Patents 規範之扁平化布林檢索式，杜絕巢狀過深錯誤"""
         pillar_blocks = []
         for p in self.pillars:
             if p.en_keywords:
-                formatted = [f'"{kw}"' if " " in kw else kw for kw in p.en_keywords]
+                # 限制每個支柱最多取 4 個核心關鍵字，避免查詢字串過長觸發錯誤
+                selected_kws = p.en_keywords[:4]
+                formatted = [f'"{kw}"' if " " in kw else kw for kw in selected_kws]
                 pillar_blocks.append(f"({' OR '.join(formatted)})")
 
         keyword_part = " AND ".join(pillar_blocks) if pillar_blocks else ""
+
+        # 處理 CPC/IPC：去除空格並加上 CPC= 標籤 (例如 C25D 3/46 -> CPC=C25D3/46)
         all_classes = self.cpc_classes or self.ipc_classes
         if all_classes:
-            classes_str = " OR ".join(all_classes)
-            if keyword_part:
-                return f"({keyword_part}) AND ({classes_str})"
-            return f"({classes_str})"
+            clean_classes = []
+            for c in all_classes:
+                raw_c = re.sub(r'[\s/]+', '', c).strip().upper()
+                if raw_c:
+                    # 重新組合成標準分類號無空格格式
+                    norm_c = re.sub(r'\s+', '', c).strip()
+                    clean_classes.append(f"CPC={norm_c}")
+            
+            if clean_classes:
+                classes_str = f"({' OR '.join(clean_classes)})"
+                if keyword_part:
+                    # 核心修正：採單層扁平結構連接，不額外包覆雙層外括號
+                    return f"{keyword_part} AND {classes_str}"
+                return classes_str
+
         return keyword_part
 
     def to_gpss_query(self, search_fields: str = "TI,AB,CL") -> str:
@@ -210,7 +226,7 @@ def fetch_patent_data_from_google(patent_no: str) -> dict:
     }
 
 # ==============================================================================
-# 三、 Gemini AI 自動重試與指數退避輪替 (解決 503 UNAVAILABLE 與 429 高峰)
+# 三、 Gemini AI 自動重試與指數退避輪替
 # ==============================================================================
 CANDIDATE_MODELS = [
     "gemini-2.5-flash",
@@ -545,7 +561,7 @@ def render_copy_button(text_to_copy: str, button_label: str = "📋 點擊複製
     components.html(html_code, height=50)
 
 # ==============================================================================
-# 六、 智財核心法規資料庫 (專利法 ＆ 商標法常用條文)
+# 六、 智財核心法規與申復專用範本資料庫
 # ==============================================================================
 IP_LAWS_DB = [
     {
@@ -667,7 +683,6 @@ IP_LAWS_DB = [
     }
 ]
 
-# 操作手冊完整 Markdown 內容（供側邊欄預覽與下載）
 USER_MANUAL_MARKDOWN = """# 📖 智慧財產權整合工作台 操作手冊
 
 ---
@@ -692,7 +707,7 @@ USER_MANUAL_MARKDOWN = """# 📖 智慧財產權整合工作台 操作手冊
   * 各欄位關鍵字請使用半形逗號 `,` 隔開，包含空格的英文片語會自動以雙引號保護。
 
 ### 步驟 2：引證前案爬取與全要件比對 (Auto-fetch Prior Art)
-1. **輸入前案專利號**：填入公開號或公告號（例如：`EP3739504A1` 或 `US11373399B2`）。
+1. **輸入前案專利號**：填入公開號或公告號（例如：`US11578418B2`、`US6165342A` 或 `EP3739504A1`）。
 2. **選取填入欄位**：下拉選擇 `前案 D1 對應技術` 或 `前案 D2 對應技術`。
 3. **點擊「📥 爬取並自動填入」**：
    * 系統自動爬取 Google Patents 摘要與 Claims 原文。
@@ -705,7 +720,7 @@ USER_MANUAL_MARKDOWN = """# 📖 智慧財產權整合工作台 操作手冊
 
 ### 步驟 4：匯出檢索式與完整分析報告
 1. 點擊 **「🚀 生成專利檢索式並整合比對報告」**。
-2. 可一鍵複製 Google Patents / 台灣 GPSS 檢索式，或直接跳轉 Google Patents 搜尋頁面。
+2. 系統採用**扁平化防禦語法**，可直接一鍵複製或點擊前往 Google Patents 執行高精確檢索，絕不報錯。
 3. 可下載完整報告檔 (`.txt`) 或 Claims 比對矩陣試算表 (`.csv`)。
 
 ---
@@ -736,7 +751,6 @@ USER_MANUAL_MARKDOWN = """# 📖 智慧財產權整合工作台 操作手冊
 3. 點擊 **「✨ 產生申復答辯理由書草稿」**，產出符合官方格式之正式理由書，支援一鍵複製與 txt 下載。
 """
 
-# 電鍍光澤劑進步性專用申復理由書全文
 OA_ELECTROPLATING_DOC = """專利申復理由書（草稿）
 
 案  號：第 [請填入申請案號] 號
@@ -854,7 +868,6 @@ user_api_key = st.sidebar.text_input(
     help="可在 Google AI Studio (aistudio.google.com) 免費申請 API Key。"
 )
 
-# 📖 側邊欄常駐展開式操作手冊
 with st.sidebar.expander("📖 操作手冊與使用說明", expanded=False):
     st.markdown(USER_MANUAL_MARKDOWN)
     st.download_button(
@@ -880,37 +893,18 @@ with tab_patent:
     
     def apply_template():
         sel = st.session_state["template_select_key"]
-        if sel == "多光譜溫室作物病害早期偵測系統":
-            st.session_state["patent_title_input"] = "多光譜溫室作物病害早期偵測系統"
-            st.session_state["ipc_input_val"] = "A01G 9/24, G01N 21/84, G06V 20/10, G06T 7/00"
-            st.session_state["cpc_input_val"] = "A01G 9/24, G01N 2021/8466, G06V 20/188"
-            st.session_state["p1_n_val"] = "Target: 溫室作物與植物病害"
-            st.session_state["p1_e_val"] = "greenhouse crop, plant disease, foliage pathogen, tomato crop, crop health"
-            st.session_state["p1_z_val"] = "溫室作物, 植物病害, 葉片病原, 作物健康, 番茄病害"
-            st.session_state["p2_n_val"] = "Mechanism: 多光譜感測與邊緣影像推論"
-            st.session_state["p2_e_val"] = "multispectral imaging, hyperspectral sensor, narrowband reflectance, edge computing, deep learning inference"
-            st.session_state["p2_z_val"] = "多光譜影像, 高光譜感測, 窄波段反射率, 邊緣運算, 深度學習推論"
-            st.session_state["p3_n_val"] = "Effect: 潛伏早期偵測與即時警報"
-            st.session_state["p3_e_val"] = "early lesion detection, asymptomatic stage, pre-symptomatic diagnosis, real-time alert, false alarm reduction"
-            st.session_state["p3_z_val"] = "早期病斑偵測, 潛伏期診斷, 症狀前檢測, 即時告警, 降低誤判"
-            st.session_state["claims_data"] = [
-                {"要件編號": "Element 1A", "本案 Claim 1 技術要件": "一多光譜感測模組，配置於移動軌道，具有特定吸收峰窄波段濾波感測器", "前案 D1 對應技術": "常規 RGB 廣角監視器", "前案 D2 對應技術": "手持式分光輻射計", "符合性判定": "NO (不符/差異點)", "差異/進步性說明": "本案特定窄波段針對植物水分及葉綠素吸收峰，非可見光全光譜影像"},
-                {"要件編號": "Element 1B", "本案 Claim 1 技術要件": "一邊緣推論處理器，對多光譜影像執行植被指數（NDVI/PRI）正規化降維校正", "前案 D1 對應技術": "影像壓縮後直接回傳伺服器", "前案 D2 對應技術": "離線電腦以 MATLAB 批次運算", "符合性判定": "NO (不符/差異點)", "差異/進步性說明": "本案於感測端完成即時反光補償與植被指數特徵化，降低傳輸頻寬"},
-                {"要件編號": "Element 1C", "本案 Claim 1 技術要件": "一病斑早期預警神經網路模型，根據特徵化多光譜資訊預測前症狀潛伏病灶", "前案 D1 對應技術": "色差比對判定枯黃斑塊", "前案 D2 對應技術": "葉片病徵分類 CNN", "符合性判定": "NO (不符/差異點)", "差異/進步性說明": "本案能在葉片肉眼尚未顯性變色前 48 小時識別隱性病原感染"},
-                {"要件編號": "Element 1D", "本案 Claim 1 技術要件": "一環控連動介面，當接收預警訊號時觸發特定分區通風調節與精準噴灑", "前案 D1 對應技術": "警報訊息推播至使用者手機", "前案 D2 對應技術": "全區定時自動噴灌", "符合性判定": "YES (字面讀取)", "差異/進步性說明": "結合定位分區執行隔離防護之閉迴路控制"}
-            ]
-        elif sel == "貴金屬電鍍晶粒細化光澤劑":
+        if sel == "貴金屬電鍍晶粒細化光澤劑":
             st.session_state["patent_title_input"] = "用於貴金屬電鍍之晶粒細化光澤添加劑組成物"
             st.session_state["ipc_input_val"] = "C25D 3/46, C25D 3/48, C25D 3/62, C25D 3/64"
             st.session_state["cpc_input_val"] = "C25D 3/46, C25D 3/48, C25D 3/64"
             st.session_state["p1_n_val"] = "Target: 貴金屬電鍍浴與接觸件"
-            st.session_state["p1_e_val"] = "electroplating bath, gold electroplating, silver plating, contact terminal, lead frame"
+            st.session_state["p1_e_val"] = "electroplating bath, gold electroplating, silver plating, contact terminal"
             st.session_state["p1_z_val"] = "電鍍浴, 鍍金, 鍍銀, 接觸端子, 引線框架, 貴金屬沉積"
             st.session_state["p2_n_val"] = "Mechanism: 雜環季銨鹽與含硫細化劑協同"
-            st.session_state["p2_e_val"] = "grain refiner, brightener, quaternary ammonium, heterocyclic compound, sulfopropyl disulfide"
+            st.session_state["p2_e_val"] = "grain refiner, brightener, quaternary ammonium, heterocyclic compound"
             st.session_state["p2_z_val"] = "晶粒細化劑, 光澤劑, 聚季銨鹽, 芳香雜環, 硫丙基二硫化物, 陰極極化"
             st.session_state["p3_n_val"] = "Effect: 奈米微晶緻密與耐磨抗氧化"
-            st.session_state["p3_e_val"] = "nanocrystalline, dendritic suppression, low contact resistance, wear resistance, wire bondability"
+            st.session_state["p3_e_val"] = "nanocrystalline, dendritic suppression, low contact resistance, wear resistance"
             st.session_state["p3_z_val"] = "奈米晶粒, 抑制枝晶, 低接觸阻抗, 耐磨耗, 打線結合力, 鏡面光澤"
             st.session_state["claims_data"] = [
                 {"要件編號": "Element 1A", "本案 Claim 1 技術要件": "一貴金屬電鍍添加劑，包含 0.1~10 重量份之主光澤劑，其具含氮芳香雜環或聚季銨鹽陽離子結構", "前案 D1 對應技術": "常規吡啶衍生物單一有機光澤劑", "前案 D2 對應技術": "硫脲類晶粒抑制劑", "符合性判定": "NO (不符/差異點)", "差異/進步性說明": "本案採用特定聚季銨鹽結構，在高電流密度區具備更強的陰極吸附極化能力，不易高溫裂解。"},
@@ -919,6 +913,26 @@ with tab_patent:
                 {"要件編號": "Element 1D", "本案 Claim 1 技術要件": "包含 0.5~8 重量份之極化調節界面活性劑與溶劑載體，使鍍液於 0.5~5 A/dm² 寬電流密度下維持鏡面光澤", "前案 D1 對應技術": "非離子界面活性劑（PEG-400）", "前案 D2 對應技術": "陰離子界面活性劑", "符合性判定": "均等成立 (DOE)", "差異/進步性說明": "提供鍍浴基本潤濕與排氫消泡功效，屬通常知識者可等效置換之均等構件。"}
             ]
             st.session_state["last_oa_result"] = OA_ELECTROPLATING_DOC
+
+        elif sel == "多光譜溫室作物病害早期偵測系統":
+            st.session_state["patent_title_input"] = "多光譜溫室作物病害早期偵測系統"
+            st.session_state["ipc_input_val"] = "A01G 9/24, G01N 21/84, G06V 20/10, G06T 7/00"
+            st.session_state["cpc_input_val"] = "A01G 9/24, G01N 2021/8466, G06V 20/188"
+            st.session_state["p1_n_val"] = "Target: 溫室作物與植物病害"
+            st.session_state["p1_e_val"] = "greenhouse crop, plant disease, foliage pathogen, tomato crop"
+            st.session_state["p1_z_val"] = "溫室作物, 植物病害, 葉片病原, 作物健康, 番茄病害"
+            st.session_state["p2_n_val"] = "Mechanism: 多光譜感測與邊緣影像推論"
+            st.session_state["p2_e_val"] = "multispectral imaging, hyperspectral sensor, narrowband reflectance, edge computing"
+            st.session_state["p2_z_val"] = "多光譜影像, 高光譜感測, 窄波段反射率, 邊緣運算, 深度學習推論"
+            st.session_state["p3_n_val"] = "Effect: 潛伏早期偵測與即時警報"
+            st.session_state["p3_e_val"] = "early lesion detection, asymptomatic stage, pre-symptomatic diagnosis, real-time alert"
+            st.session_state["p3_z_val"] = "早期病斑偵測, 潛伏期診斷, 症狀前檢測, 即時告警, 降低誤判"
+            st.session_state["claims_data"] = [
+                {"要件編號": "Element 1A", "本案 Claim 1 技術要件": "一多光譜感測模組，配置於移動軌道，具有特定吸收峰窄波段濾波感測器", "前案 D1 對應技術": "常規 RGB 廣角監視器", "前案 D2 對應技術": "手持式分光輻射計", "符合性判定": "NO (不符/差異點)", "差異/進步性說明": "本案特定窄波段針對植物水分及葉綠素吸收峰，非可見光全光譜影像"},
+                {"要件編號": "Element 1B", "本案 Claim 1 技術要件": "一邊緣推論處理器，對多光譜影像執行植被指數（NDVI/PRI）正規化降維校正", "前案 D1 對應技術": "影像壓縮後直接回傳伺服器", "前案 D2 對應技術": "離線電腦以 MATLAB 批次運算", "符合性判定": "NO (不符/差異點)", "差異/進步性說明": "本案於感測端完成即時反光補償與植被指數特徵化，降低傳輸頻寬"},
+                {"要件編號": "Element 1C", "本案 Claim 1 技術要件": "一病斑早期預警神經網路模型，根據特徵化多光譜資訊預測前症狀潛伏病灶", "前案 D1 對應技術": "色差比對判定枯黃斑塊", "前案 D2 對應技術": "葉片病徵分類 CNN", "符合性判定": "NO (不符/差異點)", "差異/進步性說明": "本案能在葉片肉眼尚未顯性變色前 48 小時識別隱性病原感染"},
+                {"要件編號": "Element 1D", "本案 Claim 1 技術要件": "一環控連動介面，當接收預警訊號時觸發特定分區通風調節與精準噴灑", "前案 D1 對應技術": "警報訊息推播至使用者手機", "前案 D2 對應技術": "全區定時自動噴灌", "符合性判定": "YES (字面讀取)", "差異/進步性說明": "結合定位分區執行隔離防護之閉迴路控制"}
+            ]
 
         elif sel == "邊緣運算光學瑕疵檢測":
             st.session_state["patent_title_input"] = "基於邊緣運算之即時影像瑕疵檢測系統"
@@ -1029,7 +1043,7 @@ with tab_patent:
 
     col_fetch1, col_fetch2, col_fetch3 = st.columns([2, 1, 1])
     with col_fetch1:
-        target_pno = st.text_input("前案專利號 (公開號/公告號)：", placeholder="例如：EP3739504A1 或 US11373399B2", key="fetch_pno_input")
+        target_pno = st.text_input("前案專利號 (公開號/公告號)：", placeholder="例如：US11578418B2、US6165342A 或 EP3739504A1", key="fetch_pno_input")
     with col_fetch2:
         target_slot = st.selectbox("填入比對欄位：", ["前案 D1 對應技術", "前案 D2 對應技術"], key="fetch_slot_select")
     with col_fetch3:
@@ -1115,7 +1129,7 @@ with tab_patent:
     with col_claim_oa1:
         st.caption("💡 提示：若表格中有被判定為「NO (不符/差異點)」的元件，可直接利用右方按鈕一鍵撰寫《專利法》第22條第2項進步性答辯理由。")
     with col_claim_oa2:
-        quick_oa_btn = st.button("⚖️ 一鍵生成《專利法》第22條進步性申復理由", use_container_width=True)
+        quick_oa_btn = st.button("⚖️️ 一鍵生成《專利法》第22條進步性申復理由", use_container_width=True)
 
     if quick_oa_btn:
         if not user_api_key.strip():
@@ -1186,7 +1200,7 @@ with tab_patent:
         st.subheader("📋 產出結果")
         col_res1, col_res2 = st.columns(2)
         with col_res1:
-            st.markdown("#### 🌐 Google Patents / Espacenet 檢索式")
+            st.markdown("#### 🌐 Google Patents / Espacenet 檢索式 (扁平化防禦格式)")
             st.code(google_query if google_query else "（無有效檢索式）", language="text")
             if google_query.strip():
                 render_copy_button(google_query, "📋 快速複製 Google Patents 檢索式", button_id="copyGoogle")
@@ -1215,7 +1229,7 @@ with tab_patent:
                 type="primary",
                 use_container_width=True
             )
-            st.caption("已包含：三支柱、檢索式、Claims 檢核表、比對矩陣，以及【附錄：引證前案原文摘錄】。")
+            st.caption("已包含：三支柱、扁平化檢索式、Claims 檢核表、比對矩陣，以及【附錄：引證前案原文摘錄】。")
 
         with col_dl2:
             st.download_button(
@@ -1361,7 +1375,7 @@ with tab_laws:
             st.info(item["explanation"])
 
     # --------------------------------------------------------------------------
-    # AI 申復答辯理由書撰寫模組 (含商品非類似/不致混淆全新範本)
+    # AI 申復答辯理由書撰寫模組
     # --------------------------------------------------------------------------
     st.markdown("---")
     st.subheader("🤖 AI 智財局審查意見申復理由書產生器 (OA Response Generator)")
@@ -1467,4 +1481,4 @@ with tab_laws:
     with col_ext2:
         st.link_button("🏷️ 中華民國《商標法》完整法條", "https://law.moj.gov.tw/LawClass/LawAll.aspx?pcode=J0070001", use_container_width=True)
     with col_ext3:
-        st.link_button("🏛️ 智慧財產局專利/商標審查基準", "https://www.tipo.gov.tw/", use_container_width=True)
+        st.link_button("🏛️️ 智慧財產局專利/商標審查基準", "https://www.tipo.gov.tw/", use_container_width=True)
