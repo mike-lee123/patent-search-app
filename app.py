@@ -63,14 +63,12 @@ class PatentSearchBuilder:
         pillar_blocks = []
         for p in self.pillars:
             if p.en_keywords:
-                # 取前 3 個核心單詞/短片語，避免布林運算過長或過度收斂
                 selected_kws = p.en_keywords[:3]
                 formatted = [f'"{kw}"' if " " in kw else kw for kw in selected_kws]
                 pillar_blocks.append(f"({' OR '.join(formatted)})")
 
         keyword_part = " AND ".join(pillar_blocks) if pillar_blocks else ""
 
-        # Google Patents 分類號標準格式：去除內部空格，直接以 OR 連接，不可在括號內逐項宣告 CPC=
         all_classes = self.cpc_classes or self.ipc_classes
         if all_classes:
             clean_classes = []
@@ -223,23 +221,23 @@ def fetch_patent_data_from_google(patent_no: str) -> dict:
     }
 
 # ==============================================================================
-# 三、 Gemini AI 自動重試與指數退避輪替
+# 三、 Gemini AI 自動重試與急速輪替機制 (防禦 503 UNAVAILABLE 與 429 尖峰)
 # ==============================================================================
 CANDIDATE_MODELS = [
     "gemini-2.5-flash",
-    "gemini-2.5-pro",
+    "gemini-3.5-flash",
     "gemini-3.6-flash",
-    "gemini-3.8-flash",
-    "gemini-3.5-flash"
+    "gemini-2.5-pro",
+    "gemini-3.8-flash"
 ]
 
 def generate_with_fallback(client, prompt: str, as_json: bool = True) -> str:
-    """自動跨多款模型輪替，並加入指數退避機制因應 503/429"""
+    """自動跨多款模型急速輪替，遭遇 503/429 立即切換下一款備援模型"""
     last_exception = None
     config_args = {"response_mime_type": "application/json"} if as_json else {}
 
     for model_name in CANDIDATE_MODELS:
-        for attempt in range(3):
+        for attempt in range(2):
             try:
                 response = client.models.generate_content(
                     model=model_name,
@@ -251,14 +249,15 @@ def generate_with_fallback(client, prompt: str, as_json: bool = True) -> str:
             except Exception as e:
                 last_exception = e
                 err_str = str(e)
+                # 偵測到 503、429 或服務忙碌時，稍作短暫退避後立刻切換到下一款模型
                 if any(code in err_str for code in ["503", "429", "UNAVAILABLE", "RESOURCE_EXHAUSTED"]):
-                    time.sleep(2 * (attempt + 1))
-                    continue
+                    time.sleep(1.2 * (attempt + 1))
+                    break  # 跳出當前模型重試，換下一款模型
                 if "404" in err_str or "NOT_FOUND" in err_str:
                     break
                 break
 
-    raise last_exception if last_exception else Exception("所有備援模型皆忙碌或無法呼叫，請檢查 API Key 權限或稍後重試。")
+    raise last_exception if last_exception else Exception("所有備援模型皆忙碌或暫時不可用，請稍後重試。")
 
 def analyze_patent_with_gemini(api_key: str, title: str) -> dict:
     """專利特徵與 IPC/CPC 拆解"""
@@ -784,11 +783,12 @@ USER_MANUAL_MARKDOWN = """# 📖 智慧財產權整合工作台 操作手冊
   * 各欄位關鍵字請使用半形逗號 `,` 隔開，包含空格的英文片語會自動以雙引號保護。
 
 ### 步驟 2：引證前案爬取與全要件比對 (Auto-fetch Prior Art)
-1. **輸入前案專利號**：填入公開號或公告號（例如：`US11578418B2`、`US6165342A` 或 `EP3739504A1`）。
+1. **輸入前案專利號**：填入公開號或公告號（例如：`US11578418B2`、`US8608931B2`、`US6165342A` 或 `EP3739504A1`）。
 2. **選取填入欄位**：下拉選擇 `前案 D1 對應技術` 或 `前案 D2 對應技術`。
 3. **點擊「📥 爬取並自動填入」**：
    * 系統自動爬取 Google Patents 摘要與 Claims 原文。
    * AI 自動將前案構件對應至 Claim 1 各 Element，並更新符合性判定（YES / NO / 均等成立）。
+   * 內建防禦 503 / 429 機制，遇尖峰負載將自動毫秒級輪替備援模型。
 4. **檢視原文**：可在下方展開卡片中即時閱讀摘要與 Claims 原文。
 
 ### 步驟 3：全要件矩陣線上編輯與進步性答辯
@@ -1146,7 +1146,7 @@ with tab_patent:
         elif not target_title.strip():
             st.warning("請先輸入專利標的名稱。")
         else:
-            with st.spinner("🤖 正在調用 Gemini 拆解技術特徵（含退避保護機制）..."):
+            with st.spinner("🤖 正在調用 Gemini 拆解技術特徵（含急速輪替保護）..."):
                 try:
                     ai_res = analyze_patent_with_gemini(user_api_key.strip(), target_title.strip())
 
@@ -1208,7 +1208,7 @@ with tab_patent:
 
     col_fetch1, col_fetch2, col_fetch3 = st.columns([2, 1, 1])
     with col_fetch1:
-        target_pno = st.text_input("前案專利號 (公開號/公告號)：", placeholder="例如：US11578418B2、US6165342A 或 EP3739504A1", key="fetch_pno_input")
+        target_pno = st.text_input("前案專利號 (公開號/公告號)：", placeholder="例如：US11578418B2、US8608931B2 或 US6165342A", key="fetch_pno_input")
     with col_fetch2:
         target_slot = st.selectbox("填入比對欄位：", ["前案 D1 對應技術", "前案 D2 對應技術"], key="fetch_slot_select")
     with col_fetch3:
@@ -1222,7 +1222,7 @@ with tab_patent:
         elif not user_api_key.strip():
             st.error("自動技術特徵拆解需要 Gemini API Key，請先於左側側邊欄填入！")
         else:
-            with st.spinner(f"🌐 正在爬取 {target_pno.strip()} 並啟動多模型備援比對..."):
+            with st.spinner(f"🌐 正在爬取 {target_pno.strip()} 並啟動多模型急速輪替比對..."):
                 try:
                     p_data = fetch_patent_data_from_google(target_pno.strip())
                     st.session_state["last_fetched_patent"] = p_data
@@ -1294,7 +1294,7 @@ with tab_patent:
     with col_claim_oa1:
         st.caption("💡 提示：若表格中有被判定為「NO (不符/差異點)」的元件，可直接利用右方按鈕一鍵撰寫《專利法》第22條第2項進步性答辯理由。")
     with col_claim_oa2:
-        quick_oa_btn = st.button("⚖️ 一鍵生成《專利法》第22條進步性申復理由", use_container_width=True)
+        quick_oa_btn = st.button("⚖️️ 一鍵生成《專利法》第22條進步性申復理由", use_container_width=True)
 
     if quick_oa_btn:
         if not user_api_key.strip():
@@ -1427,7 +1427,7 @@ with tab_trademark:
             elif not tm_brand.strip():
                 st.warning("請填寫擬申請之商標文字。")
             else:
-                with st.spinner("🤖 正在調用 Gemini 評估商標識別性與分類（含退避保護）..."):
+                with st.spinner("🤖 正在調用 Gemini 評估商標識別性與分類（含急速輪替保護）..."):
                     try:
                         st.session_state["tm_analysis"] = analyze_trademark_with_gemini(user_api_key.strip(), tm_brand.strip(), tm_desc.strip())
                         st.success("🎉 商標分析完成！")
