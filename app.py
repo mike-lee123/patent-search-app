@@ -211,16 +211,19 @@ def fetch_patent_data_from_google(patent_no: str) -> dict:
     }
 
 # ==============================================================================
-# 三、 Gemini AI 自動重試與備援輪替封裝 (503 / 429 容錯)
+# 三、 Gemini AI 自動重試與備援輪替封裝 (鎖定 3.6-flash 端點)
 # ==============================================================================
 CANDIDATE_MODELS = [
-    "gemini-3.8-flash",
-    "gemini-3.8-pro",
-    "gemini-3.0-flash"
+    "gemini-3.6-flash",      # 優先使用 3.6 系列模型
+    "gemini-3.8-flash",      # 第一備援
+    "gemini-3.5-flash"       # 第二備援
 ]
 
 def generate_with_fallback(client, prompt: str) -> str:
-    """依序嘗試 CANDIDATE_MODELS 清單中的模型，遇 503/429 退避重試"""
+    """
+    依序嘗試 CANDIDATE_MODELS 清單中的模型。
+    遇 503 (負載高) 或 429 (請求頻繁) 退避重試；遇 404 (版本不支援) 自動跳過並切換下一模型。
+    """
     last_exception = None
     for model_name in CANDIDATE_MODELS:
         for attempt in range(2):
@@ -237,13 +240,15 @@ def generate_with_fallback(client, prompt: str) -> str:
             except Exception as e:
                 last_exception = e
                 err_str = str(e)
-                is_transient = any(code in err_str for code in ["503", "429", "UNAVAILABLE", "RESOURCE_EXHAUSTED"])
-                if is_transient:
+                # 遇暫態過載 (503/429) 時短暫等待並重試同一模型
+                if any(code in err_str for code in ["503", "429", "UNAVAILABLE", "RESOURCE_EXHAUSTED"]):
                     time.sleep(2)
                     continue
-                else:
+                # 若遇 404 NOT_FOUND 則不重試，直接跳往清單中的下一款模型
+                if "404" in err_str or "NOT_FOUND" in err_str:
                     break
-    raise last_exception if last_exception else Exception("所有備援模型皆無法連線，請稍後再試。")
+                break
+    raise last_exception if last_exception else Exception("所有備援模型皆無法呼叫，請檢查 API Key 權限。")
 
 def analyze_patent_with_gemini(api_key: str, title: str) -> dict:
     """專利特徵與 IPC/CPC 拆解"""
@@ -497,7 +502,6 @@ with tab_patent:
             "claims": []
         }
 
-    # 紀錄最近爬取之專利原文
     if "last_fetched_patent" not in st.session_state:
         st.session_state.last_fetched_patent = None
 
@@ -733,7 +737,6 @@ with tab_patent:
         google_query = builder.to_google_patents_query()
         gpss_query = builder.to_gpss_query()
         
-        # 將最近爬取的前案資料傳入產生器，自動加入報告第六章節 (附錄)
         report_text = builder.generate_report_text(
             claim_chart_df=edited_df,
             prior_art_data=st.session_state.get("last_fetched_patent")
@@ -788,7 +791,7 @@ with tab_patent:
 # TAB 2: 商標權模組
 # ==============================================================================
 with tab_trademark:
-    st.subheader("🏷️ 商標尼斯分類佈局與 TIPO 規範圖樣產生器")
+    st.subheader("🏷️️ 商標尼斯分類佈局與 TIPO 規範圖樣產生器")
     st.markdown("針對品牌名稱評估識別性（Distinctiveness）、自動推薦第 09/42 等尼斯分類商品，並直接產出符合智財局規格的白底黑字標準申請圖檔。")
 
     if "tm_analysis" not in st.session_state:
