@@ -694,7 +694,7 @@ with tab_patent:
             st.markdown("##### 📄 專利說明書摘要 (Abstract)")
             st.info(last_p["abstract"] if last_p["abstract"] else "無摘要內容")
 
-            st.markdown("##### ⚖️ 申請專利範圍原文 (Claims)")
+            st.markdown("##### ⚖️️ 申請專利範圍原文 (Claims)")
             if last_p["claims"]:
                 st.code(last_p["claims"], language="text")
             else:
@@ -791,7 +791,7 @@ with tab_patent:
 # TAB 2: 商標權模組
 # ==============================================================================
 with tab_trademark:
-    st.subheader("🏷️️ 商標尼斯分類佈局與 TIPO 規範圖樣產生器")
+    st.subheader("🏷️ 商標尼斯分類佈局與 TIPO 規範圖樣產生器")
     st.markdown("針對品牌名稱評估識別性（Distinctiveness）、自動推薦第 09/42 等尼斯分類商品，並直接產出符合智財局規格的白底黑字標準申請圖檔。")
 
     if "tm_analysis" not in st.session_state:
@@ -830,7 +830,8 @@ with tab_trademark:
 
             st.markdown("#### 🔍 TIPO 官方前案檢索建議關鍵字")
             st.code(res.get("clearance_search_keywords", ""), language="text")
-            st.link_button("🇹🇼 開啟經濟部智慧局商標檢索系統", "https://tmsearch.tipo.gov.tw/", use_container_width=True)
+            # 修正官方正確入口網址為 twtmsearch.tipo.gov.tw
+            st.link_button("🇹🇼 開啟經濟部智慧局商標檢索系統", "https://twtmsearch.tipo.gov.tw/", use_container_width=True)
 
     with col_tm2:
         st.markdown("#### 2. TIPO 電子送件商標圖樣即時產生器")
