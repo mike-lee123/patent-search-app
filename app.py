@@ -357,14 +357,12 @@ def create_tipo_trademark_bytes(
     """
     dpi = 300
     cm_to_inch = 2.54
-    width_px = int((8.0 / cm_to_inch) * dpi)   # 約 945 px
+    width_px = int((8.0 / cm_to_inch) * dpi)
     height_px = int((8.0 / cm_to_inch) * dpi)
 
-    # 建立純白畫布
     canvas = Image.new("RGB", (width_px, height_px), color=(255, 255, 255))
     draw = ImageDraw.Draw(canvas)
 
-    # 字型自動偵測
     candidate_fonts = [
         "C:/Windows/Fonts/msjh.ttc",
         "C:/Windows/Fonts/msjhbd.ttc",
@@ -384,13 +382,11 @@ def create_tipo_trademark_bytes(
     if font is None:
         font = ImageFont.load_default()
 
-    # 讀取並處理 Logo
     logo_img = None
     if logo_file is not None:
         try:
             uploaded_logo = Image.open(logo_file)
             if uploaded_logo.mode in ("RGBA", "LA") or (uploaded_logo.mode == "P" and "transparency" in uploaded_logo.info):
-                # 建立白底貼合透明通道
                 rgba_logo = uploaded_logo.convert("RGBA")
                 white_bg = Image.new("RGBA", rgba_logo.size, (255, 255, 255, 255))
                 logo_img = Image.alpha_composite(white_bg, rgba_logo).convert("RGB")
@@ -399,9 +395,7 @@ def create_tipo_trademark_bytes(
         except Exception:
             logo_img = None
 
-    # 排版繪製
     if logo_img and layout == "複合商標：上圖下文":
-        # 上方放 Logo，下方放文字
         target_logo_h = int(height_px * 0.45)
         aspect = logo_img.width / logo_img.height
         new_w = int(target_logo_h * aspect)
@@ -466,7 +460,6 @@ def create_tipo_trademark_bytes(
         draw.text(((width_px - w1) / 2 - bbox1[0], start_y - bbox1[1]), line1, font=font, fill=(0, 0, 0))
         draw.text(((width_px - w2) / 2 - bbox2[0], start_y + h1 + line_spacing - bbox2[1]), line2, font=font, fill=(0, 0, 0))
     else:
-        # 預設：純文字單行水平置中
         bbox = draw.textbbox((0, 0), text, font=font)
         w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
         x = (width_px - w) / 2 - bbox[0]
@@ -693,7 +686,8 @@ with tab_patent:
     with col_p3:
         st.markdown("#### 支柱 C：技術功效 (Effect)")
         p3_name = st.text_input("支柱 C 名稱", value=st.session_state.form_data["p3_name"], key="p3_n")
-        p3_en = st.text_area("英文關鍵字 (逗號隔開)", value=st.session_data.form_data["p3_en"], key="p3_e", height=100)
+        # 此處徹底校正為 st.session_state.form_data["p3_en"]
+        p3_en = st.text_area("英文關鍵字 (逗號隔開)", value=st.session_state.form_data["p3_en"], key="p3_e", height=100)
         p3_zh = st.text_area("中文關鍵字 (逗號隔開)", value=st.session_state.form_data["p3_zh"], key="p3_z", height=100)
 
     st.markdown("---")
@@ -900,17 +894,14 @@ with tab_trademark:
 
             st.markdown("#### 🔍 TIPO 官方前案檢索建議關鍵字")
             st.code(res.get("clearance_search_keywords", ""), language="text")
-            # 正確指向官方首頁
             st.link_button("🇹🇼 開啟經濟部智慧局商標檢索首頁", "https://twtmsearch.tipo.gov.tw/", use_container_width=True)
 
     with col_tm2:
         st.markdown("#### 2. TIPO 電子送件商標圖樣即時產生器 (含 Logo 合成)")
         st.caption("官方硬性規範：8×8 公分、300 DPI、945×945 px、純白底色、RGB 模式 JPEG。")
 
-        # 檔案上傳元件
         uploaded_logo = st.file_uploader("選填：上傳品牌 Logo 圖檔 (支援 PNG、JPG，透明底自動填白)", type=["png", "jpg", "jpeg"])
 
-        # 排版選項切換
         layout_options = ["純文字：單行水平置中", "純文字：上下雙行置中"]
         if uploaded_logo is not None:
             layout_options = ["複合商標：上圖下文", "複合商標：左圖右文"] + layout_options
