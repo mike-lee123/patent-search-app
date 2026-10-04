@@ -5,6 +5,7 @@ import json
 import os
 import io
 import re
+import time
 import urllib.parse
 import requests
 from bs4 import BeautifulSoup
@@ -162,22 +163,18 @@ def fetch_patent_data_from_google(patent_no: str) -> dict:
 
     soup = BeautifulSoup(resp.text, "html.parser")
 
-    # 抓取標題
     title_elem = soup.find("meta", {"name": "DC.title"})
     title = title_elem["content"].strip() if title_elem and "content" in title_elem.attrs else ""
     if not title:
         h1 = soup.find("h1")
         title = h1.get_text(strip=True) if h1 else clean_pno
 
-    # 抓取摘要
     abstract_sec = soup.find("section", {"itemprop": "abstract"})
     abstract = abstract_sec.get_text(separator="\n", strip=True) if abstract_sec else "（未擷取到摘要內容）"
 
-    # 抓取申請專利範圍 (Claims)
     claims_sec = soup.find("section", {"itemprop": "claims"})
     claims_text = claims_sec.get_text(separator="\n", strip=True) if claims_sec else ""
     if not claims_text:
-        # 備用方案：抓取 claim-text
         c_elems = soup.find_all("div", class_="claim-text")
         claims_text = "\n".join([c.get_text(strip=True) for c in c_elems[:10]])
 
@@ -190,8 +187,45 @@ def fetch_patent_data_from_google(patent_no: str) -> dict:
     }
 
 # ==============================================================================
-# 三、 Gemini AI 技術特徵與比對拆解
+# 三、 Gemini AI 自動重試與備援輪替封裝 (503 / 429 容錯)
 # ==============================================================================
+CANDIDATE_MODELS = [
+    "gemini-3.8-flash",
+    "gemini-3.8-pro",
+    "gemini-3.0-flash"
+]
+
+def generate_with_fallback(client, prompt: str) -> str:
+    """
+    依序嘗試 CANDIDATE_MODELS 清單中的模型。
+    若遭遇 503 (負載過高) 或 429 (超量) 自動退避等待並切換備用模型。
+    """
+    last_exception = None
+    for model_name in CANDIDATE_MODELS:
+        for attempt in range(2):  # 每個模型嘗試最多 2 次
+            try:
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json"
+                    )
+                )
+                if response and response.text:
+                    return response.text
+            except Exception as e:
+                last_exception = e
+                err_str = str(e)
+                # 判定是否為暫態高負載或頻率限制
+                is_transient = any(code in err_str for code in ["503", "429", "UNAVAILABLE", "RESOURCE_EXHAUSTED"])
+                if is_transient:
+                    time.sleep(2)  # 稍微退避
+                    continue
+                else:
+                    # 其他錯誤（如 404/Invalid Argument）直接中斷切換下一模型
+                    break
+    raise last_exception if last_exception else Exception("所有備援模型皆無法連線，請稍後再試。")
+
 def analyze_patent_with_gemini(api_key: str, title: str) -> dict:
     """專利特徵與 IPC/CPC 拆解"""
     client = genai.Client(api_key=api_key)
@@ -226,12 +260,8 @@ def analyze_patent_with_gemini(api_key: str, title: str) -> dict:
         ]
     }}
     """
-    response = client.models.generate_content(
-        model='gemini-3.8-flash',
-        contents=prompt,
-        config=types.GenerateContentConfig(response_mime_type="application/json")
-    )
-    return json.loads(response.text)
+    res_text = generate_with_fallback(client, prompt)
+    return json.loads(res_text)
 
 def map_prior_art_with_gemini(api_key: str, current_elements: list, prior_art_data: dict, target_col: str) -> list:
     """使用 Gemini 將爬取之前案內容與目前 Claim 1 各要件進行比對"""
@@ -258,12 +288,8 @@ def map_prior_art_with_gemini(api_key: str, current_elements: list, prior_art_da
         }}
     ]
     """
-    response = client.models.generate_content(
-        model='gemini-3.8-flash',
-        contents=prompt,
-        config=types.GenerateContentConfig(response_mime_type="application/json")
-    )
-    return json.loads(response.text)
+    res_text = generate_with_fallback(client, prompt)
+    return json.loads(res_text)
 
 def analyze_trademark_with_gemini(api_key: str, brand_name: str, product_desc: str) -> dict:
     """商標識別性評估與尼斯分類對應"""
@@ -294,12 +320,8 @@ def analyze_trademark_with_gemini(api_key: str, brand_name: str, product_desc: s
         "clearance_search_keywords": "建議於 TIPO 檢索時比對的文字或同音異字 (逗號隔開)"
     }}
     """
-    response = client.models.generate_content(
-        model='gemini-3.8-flash',
-        contents=prompt,
-        config=types.GenerateContentConfig(response_mime_type="application/json")
-    )
-    return json.loads(response.text)
+    res_text = generate_with_fallback(client, prompt)
+    return json.loads(res_text)
 
 # ==============================================================================
 # 四、 商標圖樣繪製核心邏輯 (符合 TIPO 規範)
@@ -526,7 +548,7 @@ with tab_patent:
         elif not target_title.strip():
             st.warning("請先輸入專利標的名稱。")
         else:
-            with st.spinner("🤖 Gemini 正在分析技術特徵、比對 IPC/CPC 並擴展三支柱關鍵字..."):
+            with st.spinner("🤖 正在調用 Gemini（具備 503 自動備援輪替機制）拆解技術特徵..."):
                 try:
                     ai_res = analyze_patent_with_gemini(user_api_key.strip(), target_title.strip())
                     st.session_state.form_data.update({
@@ -544,10 +566,10 @@ with tab_patent:
                         "p3_zh": ai_res.get("pillar_c_zh", ""),
                         "claims": ai_res.get("claim_elements", [])
                     })
-                    st.success("🎉 Gemini AI 拆解完成！")
+                    st.success("🎉 Gemini AI 拆解完成！相關欄位與 Claim Chart 已自動更新。")
                     st.rerun()
                 except Exception as e:
-                    st.error(f"AI 呼叫失敗: {e}")
+                    st.error(f"AI 呼叫失敗，請稍後重試。詳細原因: {e}")
 
     col_class1, col_class2 = st.columns(2)
     with col_class1:
@@ -579,9 +601,7 @@ with tab_patent:
 
     st.markdown("---")
 
-    # ==========================================================================
-    # 專利號自動爬取與 Claim Chart 欄位對應
-    # ==========================================================================
+    # 引證前案自動爬取與比對
     st.subheader("3. 引證前案專利號爬取與自動比對 (Auto-fetch Prior Art)")
     st.caption("輸入引證案公開/公告號（支援 US、EP、WO、TW 等），自動自 Google Patents 爬取內容，並由 AI 比對填入下表指定的前案欄位。")
 
@@ -601,12 +621,11 @@ with tab_patent:
         elif not user_api_key.strip():
             st.error("自動技術特徵拆解需要 Gemini API Key，請先於左側側邊欄填入！")
         else:
-            with st.spinner(f"🌐 正在從 Google Patents 爬取 {target_pno.strip()} 並進行 Claims 全要件比對..."):
+            with st.spinner(f"🌐 正在爬取 {target_pno.strip()} 並啟動多模型備援比對..."):
                 try:
                     p_data = fetch_patent_data_from_google(target_pno.strip())
                     st.success(f"✅ 成功擷取專利：【{p_data['patent_no']}】{p_data['title']}")
 
-                    # 取得目前已有的 Claim 要件清單
                     curr_claims = st.session_state.form_data.get("claims", [])
                     if not curr_claims:
                         curr_claims = [
@@ -615,13 +634,11 @@ with tab_patent:
                             {"要件編號": "Element 1C", "本案 Claim 1 技術要件": "輸出控制/閉迴路連動", "前案 D1 對應技術": "", "前案 D2 對應技術": "", "符合性判定": "待確認", "差異/進步性說明": ""}
                         ]
 
-                    # AI 比對對應
                     ai_mappings = map_prior_art_with_gemini(user_api_key.strip(), curr_claims, p_data, target_slot)
 
                     for idx, row in enumerate(curr_claims):
                         if idx < len(ai_mappings):
                             row[target_slot] = f"[{p_data['patent_no']}] " + ai_mappings[idx].get("matched_tech", "")
-                            # 若有判定結果則寫入
                             if ai_mappings[idx].get("judgment"):
                                 row["符合性判定"] = ai_mappings[idx].get("judgment")
                             if ai_mappings[idx].get("diff_note"):
@@ -722,7 +739,7 @@ with tab_trademark:
             elif not tm_brand.strip():
                 st.warning("請填寫擬申請之商標文字。")
             else:
-                with st.spinner("🤖 Gemini 正在評估商標識別性與匹配尼斯分類..."):
+                with st.spinner("🤖 正在調用 Gemini（具備自動備援機制）評估商標識別性與分類..."):
                     try:
                         st.session_state.tm_analysis = analyze_trademark_with_gemini(user_api_key.strip(), tm_brand.strip(), tm_desc.strip())
                         st.success("🎉 商標分析完成！")
