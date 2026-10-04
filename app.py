@@ -149,13 +149,12 @@ def create_tipo_trademark_bytes(text: str, layout: str = "單行水平置中", f
     """產生符合 TIPO 電子送件 8x8 cm 300DPI 規格之 JPEG bytes"""
     dpi = 300
     cm_to_inch = 2.54
-    width_px = int((8.0 / cm_to_inch) * dpi)   # 944~945 px
+    width_px = int((8.0 / cm_to_inch) * dpi)
     height_px = int((8.0 / cm_to_inch) * dpi)
 
     image = Image.new("RGB", (width_px, height_px), color=(255, 255, 255))
     draw = ImageDraw.Draw(image)
 
-    # 字型自動偵測
     candidate_fonts = [
         "C:/Windows/Fonts/msjh.ttc",
         "C:/Windows/Fonts/msjhbd.ttc",
@@ -193,7 +192,6 @@ def create_tipo_trademark_bytes(text: str, layout: str = "單行水平置中", f
         draw.text(((width_px - w1) / 2 - bbox1[0], start_y - bbox1[1]), line1, font=font, fill=(0, 0, 0))
         draw.text(((width_px - w2) / 2 - bbox2[0], start_y + h1 + line_spacing - bbox2[1]), line2, font=font, fill=(0, 0, 0))
     else:
-        # 單行水平置中
         bbox = draw.textbbox((0, 0), text, font=font)
         w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
         x = (width_px - w) / 2 - bbox[0]
@@ -205,7 +203,7 @@ def create_tipo_trademark_bytes(text: str, layout: str = "單行水平置中", f
     return img_buffer.getvalue()
 
 # ==============================================================================
-# 三、 Gemini AI 自動分析輔助函式
+# 三、 Gemini AI 自動分析輔助函式 (升級至 gemini-3.8-flash)
 # ==============================================================================
 def analyze_patent_with_gemini(api_key: str, title: str) -> dict:
     """專利特徵與 IPC/CPC 拆解"""
@@ -242,7 +240,7 @@ def analyze_patent_with_gemini(api_key: str, title: str) -> dict:
     }}
     """
     response = client.models.generate_content(
-        model='gemini-2.5-flash',
+        model='gemini-3.8-flash',
         contents=prompt,
         config=types.GenerateContentConfig(response_mime_type="application/json")
     )
@@ -278,7 +276,7 @@ def analyze_trademark_with_gemini(api_key: str, brand_name: str, product_desc: s
     }}
     """
     response = client.models.generate_content(
-        model='gemini-2.5-flash',
+        model='gemini-3.8-flash',
         contents=prompt,
         config=types.GenerateContentConfig(response_mime_type="application/json")
     )
@@ -356,7 +354,7 @@ user_api_key = st.sidebar.text_input(
 tab_patent, tab_trademark = st.tabs(["📄 專利檢索與 Claims 比對矩陣", "🏷️ 商標權佈局與圖樣生成器"])
 
 # ==============================================================================
-# TAB 1: 專利權模組 (原有完整功能)
+# TAB 1: 專利權模組
 # ==============================================================================
 with tab_patent:
     st.sidebar.markdown("---")
@@ -568,7 +566,7 @@ with tab_patent:
             st.download_button("📊 下載前案比對矩陣 (.csv)", data=csv_bytes, file_name=f"claim_chart_{time_str}.csv", mime="text/csv", type="secondary", use_container_width=True)
 
 # ==============================================================================
-# TAB 2: 商標權模組 (全新整合)
+# TAB 2: 商標權模組
 # ==============================================================================
 with tab_trademark:
     st.subheader("🏷️ 商標尼斯分類佈局與 TIPO 規範圖樣產生器")
