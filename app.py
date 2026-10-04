@@ -219,18 +219,17 @@ CANDIDATE_MODELS = [
     "gemini-3.5-flash"
 ]
 
-def generate_with_fallback(client, prompt: str) -> str:
+def generate_with_fallback(client, prompt: str, as_json: bool = True) -> str:
     """依序嘗試 CANDIDATE_MODELS 清單中的模型，遇 503/429 退避重試"""
     last_exception = None
+    config_args = {"response_mime_type": "application/json"} if as_json else {}
     for model_name in CANDIDATE_MODELS:
         for attempt in range(2):
             try:
                 response = client.models.generate_content(
                     model=model_name,
                     contents=prompt,
-                    config=types.GenerateContentConfig(
-                        response_mime_type="application/json"
-                    )
+                    config=types.GenerateContentConfig(**config_args)
                 )
                 if response and response.text:
                     return response.text
@@ -279,7 +278,7 @@ def analyze_patent_with_gemini(api_key: str, title: str) -> dict:
         ]
     }}
     """
-    res_text = generate_with_fallback(client, prompt)
+    res_text = generate_with_fallback(client, prompt, as_json=True)
     return json.loads(res_text)
 
 def map_prior_art_with_gemini(api_key: str, current_elements: list, prior_art_data: dict, target_col: str) -> list:
@@ -307,7 +306,7 @@ def map_prior_art_with_gemini(api_key: str, current_elements: list, prior_art_da
         }}
     ]
     """
-    res_text = generate_with_fallback(client, prompt)
+    res_text = generate_with_fallback(client, prompt, as_json=True)
     return json.loads(res_text)
 
 def analyze_trademark_with_gemini(api_key: str, brand_name: str, product_desc: str) -> dict:
@@ -339,8 +338,32 @@ def analyze_trademark_with_gemini(api_key: str, brand_name: str, product_desc: s
         "clearance_search_keywords": "建議於 TIPO 檢索時比對的文字或同音異字 (逗號隔開)"
     }}
     """
-    res_text = generate_with_fallback(client, prompt)
+    res_text = generate_with_fallback(client, prompt, as_json=True)
     return json.loads(res_text)
+
+def generate_oa_response_with_gemini(api_key: str, law_article: str, target_name: str, rejection_grounds: str, diff_facts: str) -> str:
+    """自動撰寫智財局核駁審查意見申復理由書草稿"""
+    client = genai.Client(api_key=api_key)
+    prompt = f"""
+    你是一名台灣資深專利師/專利代理人與商標法務主管。
+    請依據台灣《經濟部智慧財產局（TIPO）》的官方審查基準與法定格式，針對下列核駁審查意見通知函（Office Action），撰寫一份結構嚴謹、條理分明、具高度說服力的【申復理由書（草稿）】。
+
+    【引用核駁法條】：{law_article}
+    【案名/標的名稱】：{target_name}
+    【審查官核駁理由摘要】：{rejection_grounds}
+    【申請人主張之差異事實與進步點】：{diff_facts}
+
+    請使用正式專利/商標法律繁體中文撰寫，內容必須包含以下章節架構：
+    一、案由與前言說明（載明申復標的與主張）
+    二、法規意旨與審查基準法理依據（引述該法條立法意旨與最高行政法院/智慧局審查要點）
+    三、爭點具體比對與申復理由：
+        1. 技術特徵/商標外觀觀念讀音之顯著差異比對
+        2. 克服核駁條款之核心論據（例如：非所屬技術領域具通常知識者所能輕易完成、難以預期之技術功效、不致使消費者產生混淆誤認等）
+    四、結論與懇請事項（懇請審查官准予專利核准審定 / 准予商標註冊）
+
+    請直接輸出完整排版格式的申復理由書。
+    """
+    return generate_with_fallback(client, prompt, as_json=False)
 
 # ==============================================================================
 # 四、 商標圖樣繪製核心邏輯 (支援上傳 Logo 圖文合成，符合 TIPO 規範)
@@ -351,10 +374,7 @@ def create_tipo_trademark_bytes(
     font_size: int = 76,
     logo_file=None
 ) -> bytes:
-    """
-    產生符合 TIPO 電子送件 8x8 cm 300DPI (945x945 px) 規格之 JPEG bytes。
-    支援純文字、文字上下分行、以及上圖下文/左圖右文等複合 Logo 排版。
-    """
+    """產生符合 TIPO 電子送件 8x8 cm 300DPI (945x945 px) 規格之 JPEG bytes"""
     dpi = 300
     cm_to_inch = 2.54
     width_px = int((8.0 / cm_to_inch) * dpi)
@@ -644,7 +664,7 @@ st.set_page_config(
 )
 
 st.title("🛡️ 智慧財產權整合工作台 (專利 ＆ 商標)")
-st.markdown("結合 **Google Patents 邏輯檢索**、**專利號自動爬取對應**、**Claims 全要件比對矩陣**、**TIPO 規範圖樣生成** 與 **智財法規速查**。")
+st.markdown("結合 **Google Patents 邏輯檢索**、**專利號自動爬取對應**、**Claims 全要件比對矩陣**、**TIPO 規範圖樣生成** 與 **智財法規答辯生成器**。")
 
 # 側邊欄金鑰設定
 st.sidebar.header("🔑 Gemini API 設定")
@@ -1058,11 +1078,11 @@ with tab_trademark:
             st.warning("請先於左側輸入商標名稱以生成圖樣。")
 
 # ==============================================================================
-# TAB 3: 智財法規速查模組 (專利法 ＆ 商標法)
+# TAB 3: 智財法規速查 ＆ AI 申復答辯理由草稿生成器
 # ==============================================================================
 with tab_laws:
     st.subheader("⚖️ 專利法與商標法關鍵條文速查指南")
-    st.markdown("快速檢索與參考台灣**《專利法》**與**《商標法》**核心條文、實務審查要點與常見核駁/答辯條款。")
+    st.markdown("快速檢索與參考台灣**《專利法》**與**《商標法》**核心條文、審查基準要點，並可由 **AI 一鍵模擬撰寫審查意見申復答辯書**。")
 
     col_filter1, col_filter2 = st.columns([1, 2])
     with col_filter1:
@@ -1070,7 +1090,6 @@ with tab_laws:
     with col_filter2:
         search_kw = st.text_input("輸入條文、標題或關鍵字快速過濾：", placeholder="例如：新穎性、進步性、混淆誤認、識別性、排他權")
 
-    # 執行過濾篩選
     filtered_laws = IP_LAWS_DB
     if law_type_filter != "全部法規":
         filtered_laws = [item for item in filtered_laws if item["category"] == law_type_filter]
@@ -1093,6 +1112,91 @@ with tab_laws:
             st.code(item["text"], language="text")
             st.markdown("##### 💡 審查實務與答辯要點：")
             st.info(item["explanation"])
+
+    # --------------------------------------------------------------------------
+    # AI 申復答辯理由書撰寫模組
+    # --------------------------------------------------------------------------
+    st.markdown("---")
+    st.subheader("🤖 AI 智財局審查意見申復理由書產生器 (OA Response Generator)")
+    st.caption("遭遇智慧財產局審查意見通知函（Office Action）核駁時，可依據審查官引用之法條與引證案事實，一鍵生成代理人等級的專業申復答辯書草稿。")
+
+    col_oa1, col_oa2 = st.columns(2)
+    with col_oa1:
+        oa_law = st.selectbox(
+            "選擇審查官引用的核駁條款：",
+            [
+                "專利法第 22 條第 2 項（進步性核駁 / 容易思及完成）",
+                "專利法第 22 條第 1 項（新穎性核駁 / 單一前案已揭露）",
+                "專利法第 26 條第 1/2 項（說明書未充分揭露 / Claims 不明確）",
+                "商標法第 30 條第 1 項第 10 款（與前案商標近似且有混淆誤認之虞）",
+                "商標法第 29 條第 1 項（缺乏先天識別性 / 說明性用語）",
+                "商標法第 30 條第 1 項第 11 款（著名商標淡化 / 減損信譽）"
+            ]
+        )
+
+        default_target_name = st.session_state.form_data.get("title", "") if "專利法" in oa_law else "葉語 SpectrIQ"
+        oa_target = st.text_input("本案專利標的 / 商標名稱：", value=default_target_name, placeholder="例如：多光譜溫室作物病害早期偵測系統")
+
+        oa_grounds = st.text_area(
+            "審查意見（核駁理由）主要內容：",
+            value="審查官認為本案 Claim 1 所請技術特徵，為所屬技術領域具通常知識者結合引證案 D1 之監控相機與引證案 D2 之光譜計算演算法所能輕易置換完成，不具進步性。" if "專利法" in oa_law else "審查官認為本件商標由文字「葉語」構成，指定於第 09 類農業感測儀器，直接說明商品用途，且與註冊在先之第 01234567 號「夜語」商標讀音完全相同，易致消費者混淆誤認。",
+            height=100
+        )
+
+    with col_oa2:
+        # 自動提取 Claim 表格中的進步性特徵作為預設事實
+        default_diffs = ""
+        claims_list = st.session_state.form_data.get("claims", [])
+        if "專利法" in oa_law and claims_list:
+            diff_notes = [f"{c.get('要件編號')}: {c.get('差異/進步性說明')}" for c in claims_list if c.get('差異/進步性說明')]
+            if diff_notes:
+                default_diffs = "；\n".join(diff_notes[:3])
+        if not default_diffs:
+            default_diffs = "1. 引證案 D1 僅揭露全光譜 RGB 可見光，並未揭露本案於特定水份吸收窄波段濾波感測。\n2. 引證案 D2 屬於事後 MATLAB 離線批次運算，不具備本案邊緣推論即時反光補償與定位分區閉迴路噴灑功效，產生難以預期之技術協同效益。" if "專利法" in oa_law else "1. 本件商標「葉語 SpectrIQ」兼具英文與中文字，且「葉語」賦予植物擬人化意境，屬暗示性或任意性標識，非單純產品說明。\n2. 引證案文字為「夜語」，概念指夜間交談，本件「葉語」重在植物葉片狀態，外觀與觀念截然不同，且指定商品市場通路有別，不致混淆。"
+
+        oa_diffs = st.text_area("申請人主張之差異點與實體論據（技術功效 / 外觀觀念區隔）：", value=default_diffs, height=170)
+
+        st.write("")
+        gen_oa_btn = st.button("✨ 產生申復答辯理由書草稿", type="primary", use_container_width=True)
+
+    if gen_oa_btn:
+        if not user_api_key.strip():
+            st.error("請先於左側側邊欄輸入有效的 Gemini API Key！")
+        elif not oa_target.strip():
+            st.warning("請填寫標的名稱。")
+        else:
+            with st.spinner("🤖 正在調用 Gemini（法務代理人引擎）撰寫專業申復理由書..."):
+                try:
+                    oa_result = generate_oa_response_with_gemini(
+                        user_api_key.strip(),
+                        oa_law,
+                        oa_target.strip(),
+                        oa_grounds.strip(),
+                        oa_diffs.strip()
+                    )
+                    st.session_state["last_oa_result"] = oa_result
+                    st.success("🎉 申復理由書草稿產生完成！")
+                except Exception as e:
+                    st.error(f"生成失敗: {e}")
+
+    if "last_oa_result" in st.session_state and st.session_state["last_oa_result"]:
+        oa_doc = st.session_state["last_oa_result"]
+        st.markdown("#### 📄 申復理由書草稿預覽")
+        st.markdown(oa_doc)
+
+        col_oa_copy, col_oa_dl = st.columns(2)
+        with col_oa_copy:
+            render_copy_button(oa_doc, "📋 一鍵複製申復書全文", button_id="copyOAResponse")
+        with col_oa_dl:
+            oa_time = datetime.now().strftime('%Y%m%d_%H%M%S')
+            st.download_button(
+                "📥 下載申復理由書 (.txt)",
+                data=oa_doc,
+                file_name=f"OA_Response_{oa_time}.txt",
+                mime="text/plain",
+                type="secondary",
+                use_container_width=True
+            )
 
     st.markdown("---")
     st.markdown("#### 🌐 官方全國法規資料庫即時連結")
