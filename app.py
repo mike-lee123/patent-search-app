@@ -214,16 +214,13 @@ def fetch_patent_data_from_google(patent_no: str) -> dict:
 # 三、 Gemini AI 自動重試與備援輪替封裝 (鎖定 3.6-flash 端點)
 # ==============================================================================
 CANDIDATE_MODELS = [
-    "gemini-3.6-flash",      # 優先使用 3.6 系列模型
-    "gemini-3.8-flash",      # 第一備援
-    "gemini-3.5-flash"       # 第二備援
+    "gemini-3.6-flash",
+    "gemini-3.8-flash",
+    "gemini-3.5-flash"
 ]
 
 def generate_with_fallback(client, prompt: str) -> str:
-    """
-    依序嘗試 CANDIDATE_MODELS 清單中的模型。
-    遇 503 (負載高) 或 429 (請求頻繁) 退避重試；遇 404 (版本不支援) 自動跳過並切換下一模型。
-    """
+    """依序嘗試 CANDIDATE_MODELS 清單中的模型，遇 503/429 退避重試"""
     last_exception = None
     for model_name in CANDIDATE_MODELS:
         for attempt in range(2):
@@ -240,11 +237,9 @@ def generate_with_fallback(client, prompt: str) -> str:
             except Exception as e:
                 last_exception = e
                 err_str = str(e)
-                # 遇暫態過載 (503/429) 時短暫等待並重試同一模型
                 if any(code in err_str for code in ["503", "429", "UNAVAILABLE", "RESOURCE_EXHAUSTED"]):
                     time.sleep(2)
                     continue
-                # 若遇 404 NOT_FOUND 則不重試，直接跳往清單中的下一款模型
                 if "404" in err_str or "NOT_FOUND" in err_str:
                     break
                 break
@@ -348,18 +343,28 @@ def analyze_trademark_with_gemini(api_key: str, brand_name: str, product_desc: s
     return json.loads(res_text)
 
 # ==============================================================================
-# 四、 商標圖樣繪製核心邏輯 (符合 TIPO 規範)
+# 四、 商標圖樣繪製核心邏輯 (支援上傳 Logo 圖文合成，符合 TIPO 規範)
 # ==============================================================================
-def create_tipo_trademark_bytes(text: str, layout: str = "單行水平置中", font_size: int = 76) -> bytes:
-    """產生符合 TIPO 電子送件 8x8 cm 300DPI 規格之 JPEG bytes"""
+def create_tipo_trademark_bytes(
+    text: str,
+    layout: str = "純文字：單行水平置中",
+    font_size: int = 76,
+    logo_file=None
+) -> bytes:
+    """
+    產生符合 TIPO 電子送件 8x8 cm 300DPI (945x945 px) 規格之 JPEG bytes。
+    支援純文字、文字上下分行、以及上圖下文/左圖右文等複合 Logo 排版。
+    """
     dpi = 300
     cm_to_inch = 2.54
-    width_px = int((8.0 / cm_to_inch) * dpi)
+    width_px = int((8.0 / cm_to_inch) * dpi)   # 約 945 px
     height_px = int((8.0 / cm_to_inch) * dpi)
 
-    image = Image.new("RGB", (width_px, height_px), color=(255, 255, 255))
-    draw = ImageDraw.Draw(image)
+    # 建立純白畫布
+    canvas = Image.new("RGB", (width_px, height_px), color=(255, 255, 255))
+    draw = ImageDraw.Draw(canvas)
 
+    # 字型自動偵測
     candidate_fonts = [
         "C:/Windows/Fonts/msjh.ttc",
         "C:/Windows/Fonts/msjhbd.ttc",
@@ -379,7 +384,72 @@ def create_tipo_trademark_bytes(text: str, layout: str = "單行水平置中", f
     if font is None:
         font = ImageFont.load_default()
 
-    if layout == "上下雙行置中":
+    # 讀取並處理 Logo
+    logo_img = None
+    if logo_file is not None:
+        try:
+            uploaded_logo = Image.open(logo_file)
+            if uploaded_logo.mode in ("RGBA", "LA") or (uploaded_logo.mode == "P" and "transparency" in uploaded_logo.info):
+                # 建立白底貼合透明通道
+                rgba_logo = uploaded_logo.convert("RGBA")
+                white_bg = Image.new("RGBA", rgba_logo.size, (255, 255, 255, 255))
+                logo_img = Image.alpha_composite(white_bg, rgba_logo).convert("RGB")
+            else:
+                logo_img = uploaded_logo.convert("RGB")
+        except Exception:
+            logo_img = None
+
+    # 排版繪製
+    if logo_img and layout == "複合商標：上圖下文":
+        # 上方放 Logo，下方放文字
+        target_logo_h = int(height_px * 0.45)
+        aspect = logo_img.width / logo_img.height
+        new_w = int(target_logo_h * aspect)
+        if new_w > int(width_px * 0.75):
+            new_w = int(width_px * 0.75)
+            target_logo_h = int(new_w / aspect)
+        resized_logo = logo_img.resize((new_w, target_logo_h), Image.Resampling.LANCZOS)
+
+        bbox = draw.textbbox((0, 0), text, font=font)
+        text_w = bbox[2] - bbox[0]
+        text_h = bbox[3] - bbox[1]
+
+        spacing = int(height_px * 0.05)
+        total_block_h = target_logo_h + spacing + text_h
+        start_y = (height_px - total_block_h) // 2
+
+        logo_x = (width_px - new_w) // 2
+        canvas.paste(resized_logo, (logo_x, start_y))
+
+        text_x = (width_px - text_w) // 2 - bbox[0]
+        text_y = start_y + target_logo_h + spacing - bbox[1]
+        draw.text((text_x, text_y), text, font=font, fill=(0, 0, 0))
+
+    elif logo_img and layout == "複合商標：左圖右文":
+        target_logo_w = int(width_px * 0.35)
+        aspect = logo_img.height / logo_img.width
+        new_h = int(target_logo_w * aspect)
+        if new_h > int(height_px * 0.6):
+            new_h = int(height_px * 0.6)
+            target_logo_w = int(new_h / aspect)
+        resized_logo = logo_img.resize((target_logo_w, new_h), Image.Resampling.LANCZOS)
+
+        bbox = draw.textbbox((0, 0), text, font=font)
+        text_w = bbox[2] - bbox[0]
+        text_h = bbox[3] - bbox[1]
+
+        spacing = int(width_px * 0.04)
+        total_block_w = target_logo_w + spacing + text_w
+        start_x = (width_px - total_block_w) // 2
+
+        logo_y = (height_px - new_h) // 2
+        canvas.paste(resized_logo, (start_x, logo_y))
+
+        text_x = start_x + target_logo_w + spacing - bbox[0]
+        text_y = (height_px - text_h) // 2 - bbox[1]
+        draw.text((text_x, text_y), text, font=font, fill=(0, 0, 0))
+
+    elif layout == "純文字：上下雙行置中":
         parts = text.strip().split(maxsplit=1)
         line1 = parts[0] if len(parts) > 0 else ""
         line2 = parts[1] if len(parts) > 1 else ""
@@ -392,11 +462,11 @@ def create_tipo_trademark_bytes(text: str, layout: str = "單行水平置中", f
 
         line_spacing = int(font_size * 0.4)
         total_h = h1 + h2 + line_spacing
-
         start_y = (height_px - total_h) / 2
         draw.text(((width_px - w1) / 2 - bbox1[0], start_y - bbox1[1]), line1, font=font, fill=(0, 0, 0))
         draw.text(((width_px - w2) / 2 - bbox2[0], start_y + h1 + line_spacing - bbox2[1]), line2, font=font, fill=(0, 0, 0))
     else:
+        # 預設：純文字單行水平置中
         bbox = draw.textbbox((0, 0), text, font=font)
         w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
         x = (width_px - w) / 2 - bbox[0]
@@ -404,7 +474,7 @@ def create_tipo_trademark_bytes(text: str, layout: str = "單行水平置中", f
         draw.text((x, y), text, font=font, fill=(0, 0, 0))
 
     img_buffer = io.BytesIO()
-    image.save(img_buffer, format="JPEG", dpi=(dpi, dpi), quality=95, subsampling=0)
+    canvas.save(img_buffer, format="JPEG", dpi=(dpi, dpi), quality=95, subsampling=0)
     return img_buffer.getvalue()
 
 # ==============================================================================
@@ -575,7 +645,7 @@ with tab_patent:
         elif not target_title.strip():
             st.warning("請先輸入專利標的名稱。")
         else:
-            with st.spinner("🤖 正在調用 Gemini（具備 503 自動備援輪替機制）拆解技術特徵..."):
+            with st.spinner("🤖 正在調用 Gemini 拆解技術特徵..."):
                 try:
                     ai_res = analyze_patent_with_gemini(user_api_key.strip(), target_title.strip())
                     st.session_state.form_data.update({
@@ -623,7 +693,7 @@ with tab_patent:
     with col_p3:
         st.markdown("#### 支柱 C：技術功效 (Effect)")
         p3_name = st.text_input("支柱 C 名稱", value=st.session_state.form_data["p3_name"], key="p3_n")
-        p3_en = st.text_area("英文關鍵字 (逗號隔開)", value=st.session_state.form_data["p3_en"], key="p3_e", height=100)
+        p3_en = st.text_area("英文關鍵字 (逗號隔開)", value=st.session_data.form_data["p3_en"], key="p3_e", height=100)
         p3_zh = st.text_area("中文關鍵字 (逗號隔開)", value=st.session_state.form_data["p3_zh"], key="p3_z", height=100)
 
     st.markdown("---")
@@ -680,7 +750,7 @@ with tab_patent:
                 except Exception as e:
                     st.error(f"爬取或比對失敗: {e}")
 
-    # 展開檢視爬取之專利原文 (摘要與 Claims)
+    # 展開檢視爬取之專利原文
     if st.session_state.last_fetched_patent:
         last_p = st.session_state.last_fetched_patent
         with st.expander(f"📖 查看最近爬取之專利原文：【{last_p['patent_no']}】{last_p['title']}", expanded=True):
@@ -694,7 +764,7 @@ with tab_patent:
             st.markdown("##### 📄 專利說明書摘要 (Abstract)")
             st.info(last_p["abstract"] if last_p["abstract"] else "無摘要內容")
 
-            st.markdown("##### ⚖️️ 申請專利範圍原文 (Claims)")
+            st.markdown("##### ⚖️ 申請專利範圍原文 (Claims)")
             if last_p["claims"]:
                 st.code(last_p["claims"], language="text")
             else:
@@ -788,11 +858,11 @@ with tab_patent:
             st.caption("格式：標準 UTF-8 BOM CSV，適合 Excel / 試算表直接編輯與建檔。")
 
 # ==============================================================================
-# TAB 2: 商標權模組
+# TAB 2: 商標權模組 (整合 Logo 上傳圖文合成)
 # ==============================================================================
 with tab_trademark:
     st.subheader("🏷️ 商標尼斯分類佈局與 TIPO 規範圖樣產生器")
-    st.markdown("針對品牌名稱評估識別性（Distinctiveness）、自動推薦第 09/42 等尼斯分類商品，並直接產出符合智財局規格的白底黑字標準申請圖檔。")
+    st.markdown("評估商標識別性（Distinctiveness）、自動推薦第 09/42 類商品，並支援上傳 Logo 圖片合成符合智財局規範之申請圖檔。")
 
     if "tm_analysis" not in st.session_state:
         st.session_state.tm_analysis = None
@@ -810,7 +880,7 @@ with tab_trademark:
             elif not tm_brand.strip():
                 st.warning("請填寫擬申請之商標文字。")
             else:
-                with st.spinner("🤖 正在調用 Gemini（具備自動備援機制）評估商標識別性與分類..."):
+                with st.spinner("🤖 正在調用 Gemini 評估商標識別性與分類..."):
                     try:
                         st.session_state.tm_analysis = analyze_trademark_with_gemini(user_api_key.strip(), tm_brand.strip(), tm_desc.strip())
                         st.success("🎉 商標分析完成！")
@@ -830,19 +900,32 @@ with tab_trademark:
 
             st.markdown("#### 🔍 TIPO 官方前案檢索建議關鍵字")
             st.code(res.get("clearance_search_keywords", ""), language="text")
-            # 修正官方正確入口網址為 twtmsearch.tipo.gov.tw
-            st.link_button("🇹🇼 開啟經濟部智慧局商標檢索系統", "https://twtmsearch.tipo.gov.tw/", use_container_width=True)
+            # 正確指向官方首頁
+            st.link_button("🇹🇼 開啟經濟部智慧局商標檢索首頁", "https://twtmsearch.tipo.gov.tw/", use_container_width=True)
 
     with col_tm2:
-        st.markdown("#### 2. TIPO 電子送件商標圖樣即時產生器")
-        st.caption("符合標準：8×8 公分、300 DPI、945×945 px、純白底色、墨色黑色、RGB 模式 JPEG。")
+        st.markdown("#### 2. TIPO 電子送件商標圖樣即時產生器 (含 Logo 合成)")
+        st.caption("官方硬性規範：8×8 公分、300 DPI、945×945 px、純白底色、RGB 模式 JPEG。")
 
-        layout_choice = st.radio("圖樣排版方式：", ["單行水平置中", "上下雙行置中"], horizontal=True)
-        font_size_val = st.slider("字級大小 (Font Size)：", min_value=40, max_value=120, value=76, step=2)
+        # 檔案上傳元件
+        uploaded_logo = st.file_uploader("選填：上傳品牌 Logo 圖檔 (支援 PNG、JPG，透明底自動填白)", type=["png", "jpg", "jpeg"])
+
+        # 排版選項切換
+        layout_options = ["純文字：單行水平置中", "純文字：上下雙行置中"]
+        if uploaded_logo is not None:
+            layout_options = ["複合商標：上圖下文", "複合商標：左圖右文"] + layout_options
+
+        layout_choice = st.selectbox("圖樣排版方式：", layout_options)
+        font_size_val = st.slider("文字字級大小 (Font Size)：", min_value=36, max_value=120, value=64 if uploaded_logo else 76, step=2)
 
         if tm_brand.strip():
-            img_bytes = create_tipo_trademark_bytes(tm_brand.strip(), layout=layout_choice, font_size=font_size_val)
-            st.image(img_bytes, caption="📸 圖樣預覽 (8x8 cm @ 300 DPI 標準白底黑字)", width=320)
+            img_bytes = create_tipo_trademark_bytes(
+                text=tm_brand.strip(),
+                layout=layout_choice,
+                font_size=font_size_val,
+                logo_file=uploaded_logo
+            )
+            st.image(img_bytes, caption="📸 圖樣預覽 (8x8 cm @ 300 DPI 標準白底)", width=320)
 
             clean_filename = f"trademark_{tm_brand.strip().replace(' ', '_')}.jpg"
             st.download_button(
@@ -853,6 +936,6 @@ with tab_trademark:
                 type="primary",
                 use_container_width=True
             )
-            st.caption("💡 說明：此 JPG 圖檔可直接於智慧局 E-filing 電子送件系統中作為正式商標圖樣上傳。")
+            st.caption("💡 說明：此 JPG 圖檔已完全符合智慧局 E-filing 送件系統規格，可直接作為註冊圖樣上傳。")
         else:
             st.warning("請先於左側輸入商標名稱以生成圖樣。")
