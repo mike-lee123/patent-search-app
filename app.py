@@ -262,13 +262,13 @@ def fetch_patent_data_from_google(patent_no: str) -> dict:
     }
 
 # ==============================================================================
-# 三、 Gemini AI 自動重試與指數退避輪替 (徹底排除 404/503 穩健版)
+# 三、 Gemini AI 自動重試與指數退避輪替 (優先調用 gemini-3.6-flash)
 # ==============================================================================
 CANDIDATE_MODELS = [
-    "gemini-2.5-flash",
-    "gemini-2.0-flash",
-    "gemini-2.0-flash-lite",
-    "gemini-2.5-pro"
+    "gemini-3.6-flash",          # 主力：指定使用模型（最高優先級）
+    "gemini-2.5-flash",          # 第一備援：高吞吐版本
+    "gemini-2.0-flash",          # 第二備援：低延遲穩定版本
+    "gemini-3.1-pro-preview"     # 深度推理備援
 ]
 
 def _extract_json_from_text(raw_text: str):
@@ -284,7 +284,7 @@ def _extract_json_from_text(raw_text: str):
     return json.loads(raw_text)
 
 def generate_with_fallback(client, prompt: str, as_json: bool = True) -> str:
-    """跨模型輪替，遇到 404 直接靜默略過嘗試下一款，遇到 503/429 指數退避重試"""
+    """以 gemini-3.6-flash 為首選，遭遇異常時自動進行指數退避與模型降級"""
     errors_log = []
 
     for model_name in CANDIDATE_MODELS:
@@ -305,18 +305,18 @@ def generate_with_fallback(client, prompt: str, as_json: bool = True) -> str:
 
             except Exception as e:
                 err_str = str(e)
-                errors_log.append(f"{model_name}: {err_str}")
+                errors_log.append(f"{model_name} (try {attempt+1}): {err_str}")
 
                 # 404 代表端點或 API Key 無此模型，立刻中斷當前模型，換下一個模型嘗試
-                if "404" in err_str or "NOT_FOUND" in err_str:
+                if "404" in err_str or "NOT_FOUND" in err_str or "no longer available" in err_str:
                     break
 
-                # 503 過載或 429 速率限制，等待後重試
+                # 503 尖峰負載或 429 速率限制，退避等待後重試
                 if any(code in err_str for code in ["503", "429", "UNAVAILABLE", "RESOURCE_EXHAUSTED", "high demand"]):
                     time.sleep(2.0 * (attempt + 1))
                     continue
 
-                # 若因 response_mime_type 引發錯誤，降級為純文字重試
+                # 若因 response_mime_type 引發格式錯誤，降級為純文字提示詞重試
                 if as_json and ("response_mime_type" in err_str or "json" in err_str.lower()):
                     try:
                         fallback_resp = client.models.generate_content(
@@ -330,7 +330,8 @@ def generate_with_fallback(client, prompt: str, as_json: bool = True) -> str:
                 
                 break
 
-    raise Exception(f"所有備援模型皆呼叫失敗。詳細日誌：{errors_log[-1] if errors_log else '未知錯誤'}")
+    last_err = errors_log[-1] if errors_log else "未知錯誤"
+    raise Exception(f"所有備援模型皆呼叫失敗。最後嘗試錯誤：{last_err}")
 
 def analyze_patent_with_gemini(api_key: str, title: str, is_chemical: bool = False) -> dict:
     """專利特徵與 IPC/CPC 拆解（支援一般機械電子與化學配方發明）"""
@@ -1057,7 +1058,7 @@ tab_patent, tab_trade_secret, tab_trademark, tab_laws = st.tabs([
     "📄 專利檢索與 Claims 比對矩陣 (含化學配方)",
     "🔐 營業秘密 vs. 專利策略矩陣",
     "🏷️ 商標權佈局與圖樣生成器",
-    "⚖️ 智財法規速查 (專利/商標/營業秘密)"
+    "⚖️️ 智財法規速查 (專利/商標/營業秘密)"
 ])
 
 # ==============================================================================
@@ -1128,7 +1129,7 @@ with tab_patent:
 
     with col_p2:
         st.markdown("#### 支柱 B：核心組分 / 手段 (Components)")
-        p2_name = st.text_input("支柱 B 名稱", key="p2_n_val")
+        p2_name = st.text_input("支柱 B 名產", key="p2_n_val")
         p2_en = st.text_area("英文關鍵字 (逗號隔開)", key="p2_e_val", height=100)
         p2_zh = st.text_area("中文關鍵字 (逗號隔開)", key="p2_z_val", height=100)
 
@@ -1566,7 +1567,7 @@ with tab_laws:
     for item in filtered_laws:
         badge_map = {
             "專利法": "📄 專利法",
-            "商標法": "🏷️️ 商標法",
+            "商標法": "🏷️ 商標法",
             "營業秘密法": "🔐 營業秘密法"
         }
         badge = badge_map.get(item["category"], "⚖️ 法規")
