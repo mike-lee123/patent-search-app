@@ -23,7 +23,7 @@ except ImportError:
     HAS_GENAI = False
 
 # ==============================================================================
-# 一、 核心資料結構與專利檢索邏輯 (含 Google Patents 扁平化防禦)
+# 一、 核心資料結構與專利檢索邏輯 (含分號過濾、分類號正規化與防過度限縮機制)
 # ==============================================================================
 @dataclass
 class TechnicalPillar:
@@ -33,35 +33,80 @@ class TechnicalPillar:
     zh_keywords: List[str] = field(default_factory=list)
 
 class PatentSearchBuilder:
-    """專利檢索邏輯式建造器 (含 Google Patents 扁平化防禦)"""
+    """專利檢索邏輯式建造器 (含分號過濾、佔位符黑名單清洗與分類號規範防禦)"""
+
+    PLACEHOLDER_BLACKLIST = {
+        "target system", "mechanism", "effect", "none", "null", "undefined",
+        "n/a", "na", "g06f 17/00", "待確認", "無", "未指定"
+    }
+
     def __init__(self, target_title: str):
-        self.target_title = target_title
+        self.target_title = self._clean_text(target_title)
         self.ipc_classes: List[str] = []
         self.cpc_classes: List[str] = []
         self.pillars: List[TechnicalPillar] = []
 
+    @staticmethod
+    def _clean_text(text: str) -> str:
+        """清洗純文字，徹底剔除分號、換行與多餘引號空白"""
+        if not text:
+            return ""
+        cleaned = re.sub(r'[;\r\n]+', ' ', str(text))
+        cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+        return cleaned
+
+    @classmethod
+    def _clean_keyword(cls, kw: str) -> str:
+        """清洗單一關鍵字或片語"""
+        cleaned = cls._clean_text(kw).strip('",\'')
+        if not cleaned or cleaned.lower() in cls.PLACEHOLDER_BLACKLIST:
+            return ""
+        return cleaned
+
+    @classmethod
+    def _normalize_class_code(cls, code: str) -> str:
+        """正規化 IPC/CPC 分類號（移除空格、非法分號與重複前綴）"""
+        if not code:
+            return ""
+        cleaned = re.sub(r'[;,\s]+', '', str(code)).upper()
+        cleaned = re.sub(r'^(CPC=|IPC=|IC=)', '', cleaned)
+        return cleaned
+
     def add_ipc(self, *ipc_codes: str) -> "PatentSearchBuilder":
-        self.ipc_classes.extend([code.strip() for code in ipc_codes if code.strip()])
+        for code in ipc_codes:
+            for item in re.split(r'[,;]+', str(code)):
+                norm = self._normalize_class_code(item)
+                if norm and norm.lower() not in self.PLACEHOLDER_BLACKLIST:
+                    self.ipc_classes.append(norm)
         return self
 
     def add_cpc(self, *cpc_codes: str) -> "PatentSearchBuilder":
-        self.cpc_classes.extend([code.strip() for code in cpc_codes if code.strip()])
+        for code in cpc_codes:
+            for item in re.split(r'[,;]+', str(code)):
+                norm = self._normalize_class_code(item)
+                if norm and norm.lower() not in self.PLACEHOLDER_BLACKLIST:
+                    self.cpc_classes.append(norm)
         return self
 
     def add_pillar(self, name: str, en_keywords: List[str], zh_keywords: List[str]) -> "PatentSearchBuilder":
+        cleaned_en = [self._clean_keyword(kw) for kw in en_keywords]
+        cleaned_zh = [self._clean_keyword(kw) for kw in zh_keywords]
+
         self.pillars.append(
             TechnicalPillar(
-                name=name,
-                en_keywords=[kw.strip() for kw in en_keywords if kw.strip()],
-                zh_keywords=[kw.strip() for kw in zh_keywords if kw.strip()]
+                name=self._clean_text(name),
+                en_keywords=[kw for kw in cleaned_en if kw],
+                zh_keywords=[kw for kw in cleaned_zh if kw]
             )
         )
         return self
 
-    def to_google_patents_query(self) -> str:
-        """產生符合 Google Patents 規範之扁平化布林檢索式，杜絕巢狀過深錯誤"""
+    def to_google_patents_query(self, include_effect_pillar: bool = False) -> str:
+        """產生符合 Google Patents 規範之扁平化布林檢索式（末尾絕不帶分號）"""
         pillar_blocks = []
-        for p in self.pillars:
+        pillars_to_use = self.pillars if include_effect_pillar else self.pillars[:2]
+
+        for p in pillars_to_use:
             if p.en_keywords:
                 selected_kws = p.en_keywords[:4]
                 formatted = [f'"{kw}"' if " " in kw else kw for kw in selected_kws]
@@ -69,42 +114,45 @@ class PatentSearchBuilder:
 
         keyword_part = " AND ".join(pillar_blocks) if pillar_blocks else ""
 
-        all_classes = self.cpc_classes or self.ipc_classes
-        if all_classes:
-            clean_classes = []
-            for c in all_classes:
-                raw_c = re.sub(r'[\s/]+', '', c).strip().upper()
-                if raw_c:
-                    norm_c = re.sub(r'\s+', '', c).strip()
-                    clean_classes.append(f"CPC={norm_c}")
-            
-            if clean_classes:
-                classes_str = f"({' OR '.join(clean_classes)})"
-                if keyword_part:
-                    return f"{keyword_part} AND {classes_str}"
-                return classes_str
+        classes = self.cpc_classes or self.ipc_classes
+        unique_classes = list(dict.fromkeys(classes))
 
-        return keyword_part
+        class_part = ""
+        if unique_classes:
+            formatted_classes = [f"CPC={c}" for c in unique_classes]
+            class_part = f"({' OR '.join(formatted_classes)})"
 
-    def to_gpss_query(self, search_fields: str = "TI,AB,CL") -> str:
+        if keyword_part and class_part:
+            result = f"{keyword_part} AND {class_part}"
+        else:
+            result = keyword_part or class_part
+
+        return result.rstrip("; ").strip()
+
+    def to_gpss_query(self, search_fields: str = "TI,AB,CL", include_effect_pillar: bool = True) -> str:
+        """產生符合台灣智慧局 GPSS 格式之檢索式"""
         pillar_blocks = []
-        for p in self.pillars:
+        pillars_to_use = self.pillars if include_effect_pillar else self.pillars[:2]
+
+        for p in pillars_to_use:
             all_kw = p.zh_keywords + p.en_keywords
             if all_kw:
-                formatted = [f'"{kw}"' if " " in kw else kw for kw in all_kw]
+                selected_kw = all_kw[:5]
+                formatted = [f'"{kw}"' if " " in kw else kw for kw in selected_kw]
                 pillar_blocks.append(f"({' OR '.join(formatted)})")
 
         query_body = " AND ".join(pillar_blocks) if pillar_blocks else ""
         formatted_query = f"{search_fields}=({query_body})" if query_body else ""
 
-        if self.ipc_classes:
-            ipc_block = " OR ".join([f'"{code}"*' for code in self.ipc_classes])
+        unique_ipc = list(dict.fromkeys(self.ipc_classes))
+        if unique_ipc:
+            ipc_block = " OR ".join([f'"{code}"*' for code in unique_ipc])
             if formatted_query:
                 formatted_query += f" AND IC=({ipc_block})"
             else:
                 formatted_query = f"IC=({ipc_block})"
 
-        return formatted_query
+        return formatted_query.rstrip("; ").strip()
 
     def generate_report_text(self, claim_chart_df: pd.DataFrame = None, prior_art_data: dict = None) -> str:
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -128,9 +176,9 @@ class PatentSearchBuilder:
         lines.extend([
             f"\n【三、各平台布林檢索邏輯式】",
             f"▶ Google Patents / Espacenet 檢索語法：",
-            f"{self.to_google_patents_query()}\n",
+            f"{self.to_google_patents_query(include_effect_pillar=False)}\n",
             f"▶ 台灣智慧財產局 (GPSS) 檢索語法：",
-            f"{self.to_gpss_query()}",
+            f"{self.to_gpss_query(include_effect_pillar=True)}",
             f"\n" + "=" * 85,
             f"【四、申請專利範圍（Claims）合規檢核表（含化學配方專屬要項）】",
             f"=" * 85,
@@ -611,7 +659,7 @@ IP_LAWS_DB = [
             "【第 13 條之 2 意圖在境外使用者】：\n"
             "意圖在外國、大陸地區、香港或澳門使用，而犯前條第一項各款之罪者，處一年以上十年以下有期徒刑，得併科新臺幣三百萬元以上五千萬元以下罰金。"
         ),
-        "explanation": "【實務精要】：帶走公司配方跳槽中國或境外對手，適用第 13-2 條境外加重處罰，刑度高達 1 年以上 10 年以下有期徒刑，屬重罪案件，檢調可依法實施境管與強制搜索扣押。"
+        "explanation": "【實務精要】：帶走公司配方跳槽境外對手，適用第 13-2 條境外加重處罰，刑度高達 1 年以上 10 年以下有期徒刑，屬重罪案件，檢調可依法實施境管與強制搜索扣押。"
     },
     {
         "category": "專利法",
@@ -689,14 +737,14 @@ USER_MANUAL_MARKDOWN = """# 📖 智慧財產權整合工作台 操作手冊
 
 ### 步驟 1：標的名稱與 AI 特徵拆解
 * **化學配方模式開關**：若發明屬於化學、材料、添加劑、聚合物或組成物，請勾選「🧪 本案為化學/配方/材料組成物發明」。AI 將特別針對**「組分官能基、配方重量比例、物化特性與協同增效」**進行專門解構。
-* **技術範本一鍵載入**：可在側邊欄選取「半導體封裝低介電環氧樹脂」或「貴金屬電鍍晶粒細化光澤劑」等範本，點擊「📥 載入範本」快速體驗；若要全新輸入，點擊「🧹 清空所有」即可。
+* **技術範本一鍵載入**：可在側邊欄選取範本後點擊「📥 載入範本」快速帶入；若要手動全新輸入，隨時點擊「🧹 清空所有」即可。
 
 ### 步驟 2：引證前案爬取與全要件比對
 1. 輸入引證前案號碼（如：`US11578418B2`、`US6165342A`）。
 2. 點擊「📥 爬取並自動填入」，AI 自動對應前案成分與本案要件，判定 YES / NO / 均等成立。
 
 ### 步驟 3：線上編輯與進步性申復
-* 表格中若有不符之配比或成分特徵，點擊「⚖️️ 一鍵生成進步性申復理由」，AI 自動撰寫數值臨界性與突變協同功效申復書。
+* 表格中若有不符之配比或成分特徵，點擊「⚖ 一鍵生成進步性申復理由」，AI 自動撰寫數值臨界性與突變協同功效申復書。
 
 ---
 
@@ -1188,18 +1236,23 @@ with tab_patent:
                 )
 
     st.markdown("---")
+    col_opt1, col_opt2 = st.columns(2)
+    with col_opt1:
+        include_effect = st.checkbox("🔍 Google 檢索式納入技術功效詞（Pillar C）", value=False, help="預設取消勾選以防止過度限縮檢索結果而掛零；若前案過多再勾選此項。")
+
     if st.button("🚀 生成專利檢索式並整合比對報告", type="primary", use_container_width=True):
         builder = PatentSearchBuilder(target_title if target_title else "未命名技術標的")
         if ipc_input:
-            builder.add_ipc(*ipc_input.split(","))
+            builder.add_ipc(ipc_input)
         if cpc_input:
-            builder.add_cpc(*cpc_input.split(","))
+            builder.add_cpc(cpc_input)
+
         builder.add_pillar(p1_name, p1_en.split(",") if p1_en else [], p1_zh.split(",") if p1_zh else [])
         builder.add_pillar(p2_name, p2_en.split(",") if p2_en else [], p2_zh.split(",") if p2_zh else [])
         builder.add_pillar(p3_name, p3_en.split(",") if p3_en else [], p3_zh.split(",") if p3_zh else [])
 
-        google_query = builder.to_google_patents_query()
-        gpss_query = builder.to_gpss_query()
+        google_query = builder.to_google_patents_query(include_effect_pillar=include_effect)
+        gpss_query = builder.to_gpss_query(include_effect_pillar=True)
         
         report_text = builder.generate_report_text(
             claim_chart_df=edited_df,
@@ -1209,7 +1262,7 @@ with tab_patent:
         st.subheader("📋 產出結果")
         col_res1, col_res2 = st.columns(2)
         with col_res1:
-            st.markdown("#### 🌐 Google Patents / Espacenet 檢索式 (扁平化防禦格式)")
+            st.markdown("#### 🌐 Google Patents / Espacenet 檢索式 (洗淨防呆格式)")
             st.code(google_query if google_query else "（無有效檢索式）", language="text")
             if google_query.strip():
                 render_copy_button(google_query, "📋 快速複製 Google Patents 檢索式", button_id="copyGoogle")
@@ -1306,7 +1359,7 @@ with tab_trade_secret:
         if ts_weighted_score >= 3.6:
             st.success("🎯 **強烈建議：封存為【營業秘密】保護**")
         elif ts_weighted_score >= 2.8:
-            st.warning("⚖️️ **雙軌佈局：【專利 ＋ 營業秘密】混合防禦**")
+            st.warning("⚖️ **雙軌佈局：【專利 ＋ 營業秘密】混合防禦**")
         else:
             st.info("📄 **強烈建議：全面申請【發明專利】公開排他**")
 
