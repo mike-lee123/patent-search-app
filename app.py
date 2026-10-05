@@ -560,7 +560,6 @@ def render_copy_button(text_to_copy: str, button_label: str = "📋 點擊複製
 # 六、 智財核心法規資料庫 (專利法、商標法、營業秘密法)
 # ==============================================================================
 IP_LAWS_DB = [
-    # --- 營業秘密法 ---
     {
         "category": "營業秘密法",
         "article": "營業秘密法 第 2 條",
@@ -614,7 +613,6 @@ IP_LAWS_DB = [
         ),
         "explanation": "【實務精要】：帶走公司配方跳槽中國或境外對手，適用第 13-2 條境外加重處罰，刑度高達 1 年以上 10 年以下有期徒刑，屬重罪案件，檢調可依法實施境管與強制搜索扣押。"
     },
-    # --- 專利法 ---
     {
         "category": "專利法",
         "article": "專利法 第 21 條",
@@ -646,7 +644,7 @@ IP_LAWS_DB = [
             "說明書應明確且充分揭露，使該發明所屬技術領域中具有通常知識者，能瞭解其內容，並可據以實現。\n"
             "申請專利範圍應界定申請專利之發明；其得包括一項以上之請求項，各請求項應以明確、簡潔之方式記載，且必須為說明書所支持。"
         ),
-        "explanation": "【化學配方專屬致命點】：配方專利極度注重實施例（Working Examples）與比較例（Comparative Examples）。若獨立項寫得太寬（如 1~99 wt%），而實施例僅有一組且無充分物性數據證明全範圍皆可行，審查官常依第 26 條判定「無法據以實現」或「申請專利範圍未受說明書支持」而直接核駁。"
+        "explanation": "【化學配方專屬致命點】：配方專利極度注重實施例與比較例。若獨立項寫得太寬（如 1~99 wt%），而實施例僅有一組且無充分物性數據證明全範圍皆可行，審查官常依第 26 條判定「無法據以實現」或「申請專利範圍未受說明書支持」而直接核駁。"
     },
     {
         "category": "專利法",
@@ -659,7 +657,6 @@ IP_LAWS_DB = [
         ),
         "explanation": "化學配方可同時佈局「物質/組成物（Composition of Matter）」項與「製法（Process）」項，享受物之專利全面排他與方法專利在國內外之邊境查扣效益。"
     },
-    # --- 商標法 ---
     {
         "category": "商標法",
         "article": "商標法 第 18 條",
@@ -692,37 +689,34 @@ USER_MANUAL_MARKDOWN = """# 📖 智慧財產權整合工作台 操作手冊
 
 ### 步驟 1：標的名稱與 AI 特徵拆解
 * **化學配方模式開關**：若發明屬於化學、材料、添加劑、聚合物或組成物，請勾選「🧪 本案為化學/配方/材料組成物發明」。AI 將特別針對**「組分官能基、配方重量比例、物化特性與協同增效」**進行專門解構。
-* **技術範本一鍵套用**：可自側邊欄挑選「貴金屬電鍍晶粒細化光澤劑」或「半導體封裝低介電環氧樹脂」等現成配方範本。
+* **技術範本一鍵載入**：可在側邊欄選取「半導體封裝低介電環氧樹脂」或「貴金屬電鍍晶粒細化光澤劑」等範本，點擊「📥 載入範本」快速體驗；若要全新輸入，點擊「🧹 清空所有」即可。
 
 ### 步驟 2：引證前案爬取與全要件比對
 1. 輸入引證前案號碼（如：`US11578418B2`、`US6165342A`）。
 2. 點擊「📥 爬取並自動填入」，AI 自動對應前案成分與本案要件，判定 YES / NO / 均等成立。
 
 ### 步驟 3：線上編輯與進步性申復
-* 表格中若有不符之配比或成分特徵，點擊「⚖️ 一鍵生成進步性申復理由」，AI 自動撰寫數值臨界性與突變協同功效申復書。
+* 表格中若有不符之配比或成分特徵，點擊「⚖️️ 一鍵生成進步性申復理由」，AI 自動撰寫數值臨界性與突變協同功效申復書。
 
 ---
 
 ## 模組二：🔐 營業秘密 vs. 專利決策與合規評估
 
 ### 步驟 1：專利 vs. 營業秘密 互動式決策矩陣
-* 化學配方到底該「申請專利公開」還是「內部封存為秘密」？
-* 輸入 5 項關鍵指標（反向工程難易度、產品市場週期、侵權舉證難度、製程不可逆程度、企業保密管控力），系統自動計算策略量化指數，提供最合適的佈局建議。
+* 輸入 5 項關鍵指標（反向工程難易度、產品市場週期、侵權舉證難度、製程不可逆程度、企業保密管控力），系統自動計算策略量化指數。
 
 ### 步驟 2：營業秘密法定三要件實體檢核
-* 依台灣《營業秘密法》第 2 條逐項檢視「秘密性」、「經濟價值」與「合理保密措施」，產出企業內控補強指引。
+* 依台灣《營業秘密法》第 2 條逐項檢視「秘密性」、「經濟價值」與「合理保密措施」。
 
 ---
 
 ## 模組三：🏷️ 商標權佈局與圖樣生成器
-* 尼斯分類第 01 類（化學原料/添加劑）與第 09/42 類自動評估。
-* 一鍵產出 TIPO 8×8 cm @ 300 DPI 官方標準規格圖檔。
+* 支援多行排版、對齊與行距微調，產出符合 TIPO 8×8 cm @ 300 DPI 官方標準規範 JPEG 圖檔。
 
 ---
 
 ## 模組四：⚖️ 智財法規速查 ＆ AI 申復答辯理由書產生器
 * 整合《專利法》、《商標法》與《營業秘密法》（含第 13-2 條域外加重刑責）。
-* 自動起草化學配方進步性、數值臨界性、商品不致混淆等多種正式答辯公文。
 """
 
 OA_CHEM_FORMULA_DOC = """專利申復理由書（草稿）
@@ -750,7 +744,7 @@ OA_CHEM_FORMULA_DOC = """專利申復理由書（草稿）
 三、 爭點具體比對與實體答辯理由
 --------------------------------------------------------------------------------
 （一） 引證案未揭露本案特定配合比，且存在反向教示（Teaching Away）
-1. 引證案 D1 僅揭示常規雙酚 A 型環氧樹脂，其主鏈極性高，未曾教示採用本案特定之雙環戊二烯低介電骨架。
+1. 引證案 D1 僅揭示常規雙酚 A 型樹脂，其主鏈極性高，未曾教示採用本案特定之雙環戊二烯低介電骨架。
 2. 引證案 D2 雖然揭示無機填料，但明白記載：當二氧化矽填料重量比超過 1:2 時，體系黏度將呈指數暴增而失去流動性，導致封裝產生嚴重空洞（Void）。引證案 D2 之技術教示乃是力求壓低填料比例。
 3. 本案反向突破該限制，藉由特定官能基矽烷之立體阻礙設計，在 1:2.5 至 1:4.0 極高填料比下，反常性維持低黏度與高導熱，先前技術顯有反向阻礙教示。
 
@@ -765,6 +759,44 @@ OA_CHEM_FORMULA_DOC = """專利申復理由書（草稿）
 四、 結論與懇請事項
 --------------------------------------------------------------------------------
 綜上，本案 Claim 1 具備新穎性與進步性，懇請 貴局審查官惠予早日核准審定，實感德便。
+
+謹呈
+經濟部智慧財產局 公鑒
+"""
+
+OA_ELECTROPLATING_DOC = """專利申復理由書（草稿）
+
+案  號：第 [請填入申請案號] 號
+申 請 人：[請填入專利申請人/公司名稱]
+發明名稱：用於貴金屬電鍍之晶粒細化光澤添加劑組成物
+受 文 者：經濟部智慧財產局
+
+--------------------------------------------------------------------------------
+一、 案由與前言聲明
+--------------------------------------------------------------------------------
+本件專利申請案業經 貴局審查官惠示審查意見通知函，認本案申請專利範圍請求項第 1 項等技術特徵，為所屬技術領域中具有通常知識者結合引證案 D1 與引證案 D2 所能輕易置換思及完成，而有違反《專利法》第 22 條第 2 項（進步性）之虞。
+
+申請人深感審查官審查之辛勞，經詳加研析前揭核駁理由與引證文獻後，謹陳明：引證案 D1 與引證案 D2 實質上並未揭露本案請求項第 1 項所特定界定之「主光澤劑與輔助細化劑之重量比為 1:1 至 10:1」之關鍵吸附平衡技術特徵（Element 1C），更未教示或暗示該特定配比能誘發「陰極極化過電位負移 50 至 200 mV」並將晶粒強制細化至 80 nm 以下且杜絕脆化之突變性協同增效（Synergistic Effect）。本案依法自具進步性。
+
+--------------------------------------------------------------------------------
+二、 審查基準法理依據
+--------------------------------------------------------------------------------
+按《專利審查基準》第二篇第三章第 3.4 節「進步性之判斷」明載：
+1. 「不可事後諸葛（Avoid Hindsight Bias）」：先前技術若未提供結合之動機或啟示，即不得任意將多份引證案拼湊以否定進步性。
+2. 「無法預期之技術功效（Unexpected Technical Effect）」：在數值範圍或成分配比之發明中，若發明限定之特定成分比例範圍，產生非通常知識者依既有理論所能預測之突變性增益者，即應認定具備進步性。
+
+--------------------------------------------------------------------------------
+三、 爭點具體比對與實體答辯理由
+--------------------------------------------------------------------------------
+本案特定之 1:1 至 10:1 重量配比突破了先前技術的限制：
+1. 引證案 D1 僅為一般有機添加劑之單純教示，未限定主光澤劑與含硫成分之相互作用配比。
+2. 引證案 D2 之硫脲抑制體系係採取 1:20 以上之微量添加，並教示若提高含硫添加劑濃度將導致鍍層共析脆化。通常知識者參酌 D2 之負面教示，理應避免將兩者配比維持於 1:1 至 10:1 區間。
+3. 本案特定配比使陰極極化過電位大幅負移 50 至 200 mV，晶粒尺寸被抑制於 80 奈米以下，且徹底克服脆化問題，產生顯著之突變協同增效。
+
+--------------------------------------------------------------------------------
+四、 結論與懇請事項
+--------------------------------------------------------------------------------
+綜上，本案 Claim 1 具備進步性要件，懇請 貴局審查官惠予核准審定。
 
 謹呈
 經濟部智慧財產局 公鑒
@@ -808,7 +840,9 @@ for k, v in default_keys.items():
 st.title("🛡️ 智慧財產權整合工作台 (專利 ＆ 商標 ＆ 營業秘密)")
 st.markdown("全方位整合 **專利檢索分析 (含化學配方發明)**、**營業秘密決策與合規矩陣**、**Claims 全要件比對**、**TIPO 商標規範圖樣** 與 **AI 答辯書產生器**。")
 
-# 側邊欄
+# ------------------------------------------------------------------------------
+# 側邊欄：API 設定、範本快速載入、清空與操作手冊
+# ------------------------------------------------------------------------------
 st.sidebar.header("🔑 Gemini API 設定")
 secret_key = ""
 if "GEMINI_API_KEY" in st.secrets:
@@ -822,6 +856,111 @@ user_api_key = st.sidebar.text_input(
     type="password",
     help="可在 Google AI Studio (aistudio.google.com) 免費申請 API Key。"
 )
+
+st.sidebar.markdown("---")
+st.sidebar.header("📁 快速載入技術範本")
+
+selected_template = st.sidebar.selectbox(
+    "選擇要載入的範本：",
+    [
+        "半導體封裝低介電環氧樹脂 (化學配方)",
+        "貴金屬電鍍晶粒細化光澤劑 (化學配方)",
+        "多光譜溫室作物病害早期偵測系統"
+    ],
+    key="template_select_key"
+)
+
+col_tmpl1, col_tmpl2 = st.sidebar.columns(2)
+with col_tmpl1:
+    if st.button("📥 載入範本", use_container_width=True):
+        if selected_template == "半導體封裝低介電環氧樹脂 (化學配方)":
+            st.session_state["patent_title_input"] = "半導體先進封裝用低介電高散熱環氧樹脂填料組成物"
+            st.session_state["is_chemical_patent"] = True
+            st.session_state["ipc_input_val"] = "C08L 63/00, C08K 3/36, C08G 59/20, H01L 23/29"
+            st.session_state["cpc_input_val"] = "C08L 63/00, C08K 3/36, H01L 23/295"
+            st.session_state["p1_n_val"] = "Target: 先進封裝低介電樹脂"
+            st.session_state["p1_e_val"] = "epoxy molding compound, underfill resin, semiconductor packaging, dielectric matrix"
+            st.session_state["p1_z_val"] = "環氧模塑料, 底部填膠, 半導體封裝, 低介電基質, 覆晶封裝"
+            st.session_state["p2_n_val"] = "Components: 雙環戊二烯樹脂與偶合修飾球矽"
+            st.session_state["p2_e_val"] = "dicyclopentadiene epoxy, spherical silica, silane coupling agent, cyanate ester"
+            st.session_state["p2_z_val"] = "雙環戊二烯環氧, 球形二氧化矽, 矽烷偶合劑, 氰酸酯, 活性硬化劑"
+            st.session_state["p3_n_val"] = "Property: 低損耗與高散熱低應力"
+            st.session_state["p3_e_val"] = "low dielectric dissipation Df, low CTE, thermal conductivity, high warpage resistance"
+            st.session_state["p3_z_val"] = "低介電損耗 Df, 低熱膨脹係數 CTE, 高導熱率, 抑制晶圓翹曲, 耐吸濕回焊"
+            st.session_state["claims_data"] = [
+                {"要件編號": "Element 1A", "本案 Claim 1 技術要件": "一種低介電高散熱環氧樹脂組成物，包含 100 重量份之主樹脂基質，其中該主樹脂包含至少 40 wt% 之雙環戊二烯型（DCPD）環氧寡聚物", "前案 D1 對應技術": "常規雙酚 A 型或酚醛型環氧樹脂", "前案 D2 對應技術": "環脂族液態環氧樹脂", "符合性判定": "NO (不符/差異點)", "差異/進步性說明": "本案採用 DCPD 剛性脂環骨架，其無極性特徵大幅降低高頻微波下之偶極極化，降低介電損耗 Df 至 0.003 以下。"},
+                {"要件編號": "Element 1B", "本案 Claim 1 技術要件": "包含 250 至 400 重量份之表面改質球形二氧化矽奈米粉體，以含苯基之三甲氧基矽烷預處理", "前案 D1 對應技術": "未經修飾之角狀石英粉（填料量小於 150 份）", "前案 D2 對應技術": "常規胺基矽烷修飾球矽", "符合性判定": "NO (不符/差異點)", "差異/進步性說明": "特定苯基矽烷修飾能抑制奈米團聚，於極高填充量下仍維持流動度與抗空洞特性。"},
+                {"要件編號": "Element 1C", "本案 Claim 1 技術要件": "該主樹脂基質與修飾奈米二氧化矽之特定重量比為 1:2.5 至 1:4.0，於 10 GHz 下介電損耗 Df 小於 0.003", "前案 D1 對應技術": "重量比未限定，常態為 1:1.5 以下", "前案 D2 對應技術": "教示填料高於 1:2 時黏度急遽飆升失去加工性 (Negative Teaching)", "符合性判定": "NO (不符/差異點)", "差異/進步性說明": "核心臨界配比：突破引證案 D2 之高填料黏度障礙，在特定 1:2.5~1:4.0 比例下兼具高導熱與超低 Df 協同增效。"},
+                {"要件編號": "Element 1D", "本案 Claim 1 技術要件": "包含 15 至 35 重量份之活性酚類或酸酐類硬化劑及促進劑", "前案 D1 對應技術": "常規雙氰胺 (DICY) 硬化劑", "前案 D2 對應技術": "酸酐硬化劑", "符合性判定": "均等成立 (DOE)", "差異/進步性說明": "提供交聯固化基本功能，屬所屬技術領域具通常知識者所能置換之均等構件。"}
+            ]
+            st.session_state["last_oa_result"] = OA_CHEM_FORMULA_DOC
+
+        elif selected_template == "貴金屬電鍍晶粒細化光澤劑 (化學配方)":
+            st.session_state["patent_title_input"] = "用於貴金屬電鍍之晶粒細化光澤添加劑組成物"
+            st.session_state["is_chemical_patent"] = True
+            st.session_state["ipc_input_val"] = "C25D 3/46, C25D 3/48, C25D 3/62, C25D 3/64"
+            st.session_state["cpc_input_val"] = "C25D 3/46, C25D 3/48, C25D 3/64"
+            st.session_state["p1_n_val"] = "Target: 貴金屬電鍍浴與接觸件"
+            st.session_state["p1_e_val"] = "electroplating bath, gold electroplating, silver plating, contact terminal"
+            st.session_state["p1_z_val"] = "電鍍浴, 鍍金, 鍍銀, 接觸端子, 引線框架, 貴金屬沉積"
+            st.session_state["p2_n_val"] = "Components: 雜環季銨鹽與含硫細化劑協同"
+            st.session_state["p2_e_val"] = "grain refiner, brightener, quaternary ammonium, heterocyclic compound"
+            st.session_state["p2_z_val"] = "晶粒細化劑, 光澤劑, 聚季銨鹽, 芳香雜環, 硫丙基二硫化物, 陰極極化"
+            st.session_state["p3_n_val"] = "Property: 奈米微晶緻密與耐磨抗氧化"
+            st.session_state["p3_e_val"] = "nanocrystalline, dendritic suppression, low contact resistance, wear resistance"
+            st.session_state["p3_z_val"] = "奈米晶粒, 抑制枝晶, 低接觸阻抗, 耐磨耗, 打線結合力, 鏡面光澤"
+            st.session_state["claims_data"] = [
+                {"要件編號": "Element 1A", "本案 Claim 1 技術要件": "一貴金屬電鍍添加劑，包含 0.1~10 重量份之主光澤劑，其具含氮芳香雜環或聚季銨鹽陽離子結構", "前案 D1 對應技術": "常規吡啶衍生物單一有機光澤劑", "前案 D2 對應技術": "硫脲類晶粒抑制劑", "符合性判定": "NO (不符/差異點)", "差異/進步性說明": "本案特定聚季銨鹽結構具強陰極極化能力，不易高溫裂解。"},
+                {"要件編號": "Element 1B", "本案 Claim 1 技術要件": "包含 0.05~5 重量份之輔助細化劑，選自含硫或磺酸基有機抑制劑（如 MPS/SPS 類）", "前案 D1 對應技術": "游離磺酸鹽載體", "前案 D2 對應技術": "含硫醇基界面整平劑", "符合性判定": "YES (字面讀取)", "差異/進步性說明": "公知含硫去極化構件。"},
+                {"要件編號": "Element 1C", "本案 Claim 1 技術要件": "該主光澤劑與輔助細化劑之重量比限定為 1:1 至 10:1，具特定吸附平衡比例", "前案 D1 對應技術": "未限定特定重量配比，由操作者隨機添加", "前案 D2 對應技術": "比例為 1:20 之微量添加體系", "符合性判定": "NO (不符/差異點)", "差異/進步性說明": "特定 1:1~10:1 配比產生過電位負移 50~200 mV 協同增效，晶粒細化至 80 nm 且無脆化。"},
+                {"要件編號": "Element 1D", "本案 Claim 1 技術要件": "包含 0.5~8 重量份之極化調節界面活性劑與溶劑載體", "前案 D1 對應技術": "PEG-400 界面活性劑", "前案 D2 對應技術": "陰離子活性劑", "符合性判定": "均等成立 (DOE)", "差異/進步性說明": "提供基本潤濕消泡功效，屬等效置換之均等構件。"}
+            ]
+            st.session_state["last_oa_result"] = OA_ELECTROPLATING_DOC
+
+        elif selected_template == "多光譜溫室作物病害早期偵測系統":
+            st.session_state["patent_title_input"] = "多光譜溫室作物病害早期偵測系統"
+            st.session_state["is_chemical_patent"] = False
+            st.session_state["ipc_input_val"] = "A01G 9/24, G01N 21/84, G06V 20/10"
+            st.session_state["cpc_input_val"] = "A01G 9/24, G01N 2021/8466"
+            st.session_state["p1_n_val"] = "Target: 溫室作物與植物病害"
+            st.session_state["p1_e_val"] = "greenhouse crop, plant disease, foliage pathogen, tomato crop"
+            st.session_state["p1_z_val"] = "溫室作物, 植物病害, 葉片病原, 作物健康, 番茄病害"
+            st.session_state["p2_n_val"] = "Mechanism: 多光譜感測與邊緣影像推論"
+            st.session_state["p2_e_val"] = "multispectral imaging, hyperspectral sensor, narrowband reflectance, edge computing"
+            st.session_state["p2_z_val"] = "多光譜影像, 高光譜感測, 窄波段反射率, 邊緣運算, 深度學習推論"
+            st.session_state["p3_n_val"] = "Effect: 潛伏早期偵測與即時警報"
+            st.session_state["p3_e_val"] = "early lesion detection, asymptomatic stage, pre-symptomatic diagnosis, real-time alert"
+            st.session_state["p3_z_val"] = "早期病斑偵測, 潛伏期診斷, 症狀前檢測, 即時告警, 降低誤判"
+            st.session_state["claims_data"] = [
+                {"要件編號": "Element 1A", "本案 Claim 1 技術要件": "一多光譜感測模組，配置於移動軌道，具有特定吸收峰窄波段濾波感測器", "前案 D1 對應技術": "常規 RGB 廣角監視器", "前案 D2 對應技術": "手持式分光輻射計", "符合性判定": "NO (不符/差異點)", "差異/進步性說明": "本案特定窄波段針對植物水分及葉綠素吸收峰。"},
+                {"要件編號": "Element 1B", "本案 Claim 1 技術要件": "一邊緣推論處理器，對多光譜影像執行植被指數（NDVI/PRI）正規化降維校正", "前案 D1 對應技術": "影像壓縮後直接回傳伺服器", "前案 D2 對應技術": "離線電腦以 MATLAB 批次運算", "符合性判定": "NO (不符/差異點)", "差異/進步性說明": "本案於邊緣端完成即時反光補償與指數特徵化。"},
+                {"要件編號": "Element 1C", "本案 Claim 1 技術要件": "一病斑早期預警神經網路模型，根據特徵化多光譜資訊預測前症狀潛伏病灶", "前案 D1 對應技術": "色差比對判定枯黃斑塊", "前案 D2 對應技術": "葉片病徵分類 CNN", "符合性判定": "NO (不符/差異點)", "差異/進步性說明": "葉片肉眼顯性病變前 48 小時預警。"}
+            ]
+        st.success(f"已載入範本：{selected_template}")
+        st.rerun()
+
+with col_tmpl2:
+    if st.button("🧹 清空所有", use_container_width=True):
+        st.session_state["patent_title_input"] = ""
+        st.session_state["ipc_input_val"] = ""
+        st.session_state["cpc_input_val"] = ""
+        st.session_state["p1_n_val"] = "Target: 應用標的"
+        st.session_state["p1_e_val"] = ""
+        st.session_state["p1_z_val"] = ""
+        st.session_state["p2_n_val"] = "Mechanism/Components: 核心手段/組分"
+        st.session_state["p2_e_val"] = ""
+        st.session_state["p2_z_val"] = ""
+        st.session_state["p3_n_val"] = "Effect/Property: 技術功效/物化特性"
+        st.session_state["p3_e_val"] = ""
+        st.session_state["p3_z_val"] = ""
+        st.session_state["is_chemical_patent"] = False
+        st.session_state["claims_data"] = [
+            {"要件編號": "Element 1A", "本案 Claim 1 技術要件": "", "前案 D1 對應技術": "", "前案 D2 對應技術": "", "符合性判定": "待確認", "差異/進步性說明": ""}
+        ]
+        st.session_state["last_oa_result"] = None
+        st.session_state["last_fetched_patent"] = None
+        st.info("已清空所有輸入欄位與矩陣。")
+        st.rerun()
 
 with st.sidebar.expander("📖 操作手冊與使用說明", expanded=False):
     st.markdown(USER_MANUAL_MARKDOWN)
@@ -844,81 +983,6 @@ tab_patent, tab_trade_secret, tab_trademark, tab_laws = st.tabs([
 # TAB 1: 專利權模組 (特化化學配方專利)
 # ==============================================================================
 with tab_patent:
-    st.sidebar.markdown("---")
-    st.sidebar.header("📁 專利技術範本")
-    
-    def apply_template():
-        sel = st.session_state["template_select_key"]
-        if sel == "半導體封裝低介電環氧樹脂 (化學配方)":
-            st.session_state["patent_title_input"] = "半導體先進封裝用低介電高散熱環氧樹脂填料組成物"
-            st.session_state["is_chemical_patent"] = True
-            st.session_state["ipc_input_val"] = "C08L 63/00, C08K 3/36, C08G 59/20, H01L 23/29"
-            st.session_state["cpc_input_val"] = "C08L 63/00, C08K 3/36, H01L 23/295"
-            st.session_state["p1_n_val"] = "Target: 先進封裝低介電樹脂"
-            st.session_state["p1_e_val"] = "epoxy molding compound, underfill resin, semiconductor packaging, dielectric matrix"
-            st.session_state["p1_z_val"] = "環氧模塑料, 底部填膠, 半導體封裝, 低介電基質, 覆晶封裝"
-            st.session_state["p2_n_val"] = "Components: 雙環戊二烯樹脂與偶合修飾球矽"
-            st.session_state["p2_e_val"] = "dicyclopentadiene epoxy, spherical silica, silane coupling agent, cyanate ester"
-            st.session_state["p2_z_val"] = "雙環戊二烯環氧, 球形二氧化矽, 矽烷偶合劑, 氰酸酯, 活性硬化劑"
-            st.session_state["p3_n_val"] = "Property: 低損耗與高散熱低應力"
-            st.session_state["p3_e_val"] = "low dielectric dissipation Df, low CTE, thermal conductivity, high warpage resistance"
-            st.session_state["p3_z_val"] = "低介電損耗 Df, 低熱膨脹係數 CTE, 高導熱率, 抑制晶圓翹曲, 耐吸濕回焊"
-            st.session_state["claims_data"] = [
-                {"要件編號": "Element 1A", "本案 Claim 1 技術要件": "一種低介電高散熱環氧樹脂組成物，包含 100 重量份之主樹脂基質，其中該主樹脂包含至少 40 wt% 之雙環戊二烯型（DCPD）環氧寡聚物", "前案 D1 對應技術": "常規雙酚 A 型或酚醛型環氧樹脂", "前案 D2 對應技術": "環脂族液態環氧樹脂", "符合性判定": "NO (不符/差異點)", "差異/進步性說明": "本案採用 DCPD 剛性脂環骨架，其無極性特徵大幅降低高頻微波下之偶極極化，降低介電損耗 Df 至 0.003 以下。"},
-                {"要件編號": "Element 1B", "本案 Claim 1 技術要件": "包含 250 至 400 重量份之表面改質球形二氧化矽奈米粉體，以含苯基之三甲氧基矽烷預處理", "前案 D1 對應技術": "未經修飾之角狀石英粉（填料量小於 150 份）", "前案 D2 對應技術": "常規胺基矽烷修飾球矽", "符合性判定": "NO (不符/差異點)", "差異/進步性說明": "特定苯基矽烷修飾能抑制奈米團聚，於極高填充量下仍維持流動度與抗空洞特性。"},
-                {"要件編號": "Element 1C", "本案 Claim 1 技術要件": "該主樹脂基質與修飾奈米二氧化矽之特定重量比為 1:2.5 至 1:4.0，於 10 GHz 下介電損耗 Df 小於 0.003", "前案 D1 對應技術": "重量比未限定，常態為 1:1.5 以下", "前案 D2 對應技術": "教示填料高於 1:2 時黏度急遽飆升失去加工性 (Negative Teaching)", "符合性判定": "NO (不符/差異點)", "差異/進步性說明": "核心臨界配比：突破引證案 D2 之高填料黏度障礙，在特定 1:2.5~1:4.0 比例下兼具高導熱與超低 Df 協同增效。"},
-                {"要件編號": "Element 1D", "本案 Claim 1 技術要件": "包含 15 至 35 重量份之活性酚類或酸酐類硬化劑及促進劑", "前案 D1 對應技術": "常規雙氰胺 (DICY) 硬化劑", "前案 D2 對應技術": "酸酐硬化劑", "符合性判定": "均等成立 (DOE)", "差異/進步性說明": "提供交聯固化基本功能，屬所屬技術領域具通常知識者所能置換之均等構件。"}
-            ]
-            st.session_state["last_oa_result"] = OA_CHEM_FORMULA_DOC
-
-        elif sel == "貴金屬電鍍晶粒細化光澤劑 (化學配方)":
-            st.session_state["patent_title_input"] = "用於貴金屬電鍍之晶粒細化光澤添加劑組成物"
-            st.session_state["is_chemical_patent"] = True
-            st.session_state["ipc_input_val"] = "C25D 3/46, C25D 3/48, C25D 3/62, C25D 3/64"
-            st.session_state["cpc_input_val"] = "C25D 3/46, C25D 3/48, C25D 3/64"
-            st.session_state["p1_n_val"] = "Target: 貴金屬電鍍浴與接觸件"
-            st.session_state["p1_e_val"] = "electroplating bath, gold electroplating, silver plating, contact terminal"
-            st.session_state["p1_z_val"] = "電鍍浴, 鍍金, 鍍銀, 接觸端子, 引線框架, 貴金屬沉積"
-            st.session_state["p2_n_val"] = "Components: 雜環季銨鹽與含硫細化劑協同"
-            st.session_state["p2_e_val"] = "grain refiner, brightener, quaternary ammonium, heterocyclic compound"
-            st.session_state["p2_z_val"] = "晶粒細化劑, 光澤劑, 聚季銨鹽, 芳香雜環, 硫丙基二硫化物, 陰極極化"
-            st.session_state["p3_n_val"] = "Property: 奈米微晶緻密與耐磨抗氧化"
-            st.session_state["p3_e_val"] = "nanocrystalline, dendritic suppression, low contact resistance, wear resistance"
-            st.session_state["p3_z_val"] = "奈米晶粒, 抑制枝晶, 低接觸阻抗, 耐磨耗, 打線結合力, 鏡面光澤"
-            st.session_state["claims_data"] = [
-                {"要件編號": "Element 1A", "本案 Claim 1 技術要件": "一貴金屬電鍍添加劑，包含 0.1~10 重量份之主光澤劑，其具含氮芳香雜環或聚季銨鹽陽離子結構", "前案 D1 對應技術": "常規吡啶衍生物單一有機光澤劑", "前案 D2 對應技術": "硫脲類晶粒抑制劑", "符合性判定": "NO (不符/差異點)", "差異/進步性說明": "本案特定聚季銨鹽結構具強陰極極化能力，不易高溫裂解。"},
-                {"要件編號": "Element 1B", "本案 Claim 1 技術要件": "包含 0.05~5 重量份之輔助細化劑，選自含硫或磺酸基有機抑制劑（如 MPS/SPS 類）", "前案 D1 對應技術": "游離磺酸鹽載體", "前案 D2 對應技術": "含硫醇基界面整平劑", "符合性判定": "YES (字面讀取)", "差異/進步性說明": "公知含硫去極化構件。"},
-                {"要件編號": "Element 1C", "本案 Claim 1 技術要件": "該主光澤劑與輔助細化劑之重量比限定為 1:1 至 10:1，具特定吸附平衡比例", "前案 D1 對應技術": "未限定特定重量配比，由操作者隨機添加", "前案 D2 對應技術": "比例為 1:20 之微量添加體系", "符合性判定": "NO (不符/差異點)", "差異/進步性說明": "特定 1:1~10:1 配比產生過電位負移 50~200 mV 協同增效，晶粒細化至 80 nm 且無脆化。"},
-                {"要件編號": "Element 1D", "本案 Claim 1 技術要件": "包含 0.5~8 重量份之極化調節界面活性劑與溶劑載體", "前案 D1 對應技術": "PEG-400 界面活性劑", "前案 D2 對應技術": "陰離子活性劑", "符合性判定": "均等成立 (DOE)", "差異/進步性說明": "提供基本潤濕消泡功效，屬等效置換之均等構件。"}
-            ]
-
-        elif sel == "多光譜溫室作物病害早期偵測系統":
-            st.session_state["patent_title_input"] = "多光譜溫室作物病害早期偵測系統"
-            st.session_state["is_chemical_patent"] = False
-            st.session_state["ipc_input_val"] = "A01G 9/24, G01N 21/84, G06V 20/10"
-            st.session_state["cpc_input_val"] = "A01G 9/24, G01N 2021/8466"
-            st.session_state["p1_n_val"] = "Target: 溫室作物與植物病害"
-            st.session_state["p1_e_val"] = "greenhouse crop, plant disease, foliage pathogen, tomato crop"
-            st.session_state["p1_z_val"] = "溫室作物, 植物病害, 葉片病原, 作物健康, 番茄病害"
-            st.session_state["p2_n_val"] = "Mechanism: 多光譜感測與邊緣影像推論"
-            st.session_state["p2_e_val"] = "multispectral imaging, hyperspectral sensor, narrowband reflectance, edge computing"
-            st.session_state["p2_z_val"] = "多光譜影像, 高光譜感測, 窄波段反射率, 邊緣運算, 深度學習推論"
-            st.session_state["p3_n_val"] = "Effect: 潛伏早期偵測與即時警報"
-            st.session_state["p3_e_val"] = "early lesion detection, asymptomatic stage, pre-symptomatic diagnosis, real-time alert"
-            st.session_state["p3_z_val"] = "早期病斑偵測, 潛伏期診斷, 症狀前檢測, 即時告警, 降低誤判"
-            st.session_state["claims_data"] = [
-                {"要件編號": "Element 1A", "本案 Claim 1 技術要件": "一多光譜感測模組，配置於移動軌道，具有特定吸收峰窄波段濾波感測器", "前案 D1 對應技術": "常規 RGB 廣角監視器", "前案 D2 對應技術": "手持式分光輻射計", "符合性判定": "NO (不符/差異點)", "差異/進步性說明": "本案特定窄波段針對植物水分及葉綠素吸收峰。"},
-                {"要件編號": "Element 1B", "本案 Claim 1 技術要件": "一邊緣推論處理器，對多光譜影像執行植被指數（NDVI/PRI）正規化降維校正", "前案 D1 對應技術": "影像壓縮後直接回傳伺服器", "前案 D2 對應技術": "離線電腦以 MATLAB 批次運算", "符合性判定": "NO (不符/差異點)", "差異/進步性說明": "本案於邊緣端完成即時反光補償與指數特徵化。"},
-                {"要件編號": "Element 1C", "本案 Claim 1 技術要件": "一病斑早期預警神經網路模型，根據特徵化多光譜資訊預測前症狀潛伏病灶", "前案 D1 對應技術": "色差比對判定枯黃斑塊", "前案 D2 對應技術": "葉片病徵分類 CNN", "符合性判定": "NO (不符/差異點)", "差異/進步性說明": "葉片肉眼顯性病變前 48 小時預警。"}
-            ]
-
-    st.sidebar.selectbox(
-        "選擇技術模板快速填入：",
-        ["自訂輸入", "半導體封裝低介電環氧樹脂 (化學配方)", "貴金屬電鍍晶粒細化光澤劑 (化學配方)", "多光譜溫室作物病害早期偵測系統"],
-        key="template_select_key",
-        on_change=apply_template
-    )
-
     st.subheader("1. 發明標的名稱與 AI 自動拆解")
     col_input1, col_input2 = st.columns([3, 1])
 
@@ -1048,7 +1112,7 @@ with tab_patent:
             st.markdown(f"**專利號**：`{last_p['patent_no']}` ｜ [在 Google Patents 開啟原文]({last_p['url']})")
             st.markdown("##### 📄 專利說明書摘要")
             st.info(last_p["abstract"] if last_p["abstract"] else "無摘要內容")
-            st.markdown("##### ⚖️️ 申請專利範圍原文 (Claims)")
+            st.markdown("##### ⚖ 申請專利範圍原文 (Claims)")
             st.code(last_p["claims"] if last_p["claims"] else "無 Claims 內容", language="text")
 
     st.markdown("---")
@@ -1186,7 +1250,7 @@ with tab_patent:
             )
 
 # ==============================================================================
-# TAB 2: 營業秘密 vs. 專利策略佈局模組 (全新新增)
+# TAB 2: 營業秘密 vs. 專利策略佈局模組
 # ==============================================================================
 with tab_trade_secret:
     st.subheader("🔐 營業秘密 vs. 專利策略佈局決策矩陣 (Patent vs. Trade Secret Decision Matrix)")
@@ -1231,8 +1295,6 @@ with tab_trade_secret:
             help="1分：無 NDA、無門禁分流、人員流動大；5分：配方拆解代工、核心機密分段隔離、已建立 ISO 27001 與營業秘密資安稽核制度。"
         )
 
-    # 決策演算法：計算傾向營業秘密的分數 (Trade Secret Score) vs 專利分數
-    # 越高越適合營業秘密：反向工程極難(高)、不可偵測(低可偵測=高秘密)、生命週期長(高)、製程參數黑箱(高)、保密措施完備(高)
     ts_weighted_score = (score_re * 0.25) + ((6 - score_detect) * 0.25) + (score_lifecycle * 0.15) + (score_process * 0.20) + (score_protection * 0.15)
 
     st.markdown("---")
@@ -1244,7 +1306,7 @@ with tab_trade_secret:
         if ts_weighted_score >= 3.6:
             st.success("🎯 **強烈建議：封存為【營業秘密】保護**")
         elif ts_weighted_score >= 2.8:
-            st.warning("⚖️ **雙軌佈局：【專利 ＋ 營業秘密】混合防禦**")
+            st.warning("⚖️️ **雙軌佈局：【專利 ＋ 營業秘密】混合防禦**")
         else:
             st.info("📄 **強烈建議：全面申請【發明專利】公開排他**")
 
@@ -1430,9 +1492,6 @@ with tab_laws:
             st.markdown("##### 💡 審查實務與爭訟抗辯要點：")
             st.info(item["explanation"])
 
-    # --------------------------------------------------------------------------
-    # AI 申復答辯理由書撰寫模組
-    # --------------------------------------------------------------------------
     st.markdown("---")
     st.subheader("🤖 AI 智財局審查意見申復理由書產生器 (OA Response Generator)")
     st.caption("遭遇智慧財產局審查意見通知函（Office Action）核駁時，可依據引證案事實與抗辯要點，一鍵生成代理人規格之申復答辯理由書。")
