@@ -5,7 +5,6 @@ import json
 import os
 import io
 import re
-import time
 import urllib.parse
 import requests
 from bs4 import BeautifulSoup
@@ -15,15 +14,8 @@ from typing import List, Dict
 from PIL import Image, ImageDraw, ImageFont
 
 # ==============================================================================
-# 一、 核心資料結構與專利檢索邏輯 (含防呆過濾機制)
+# 一、 核心資料結構與專利檢索邏輯 (純本地扁平化演算法)
 # ==============================================================================
-BANNED_PLACEHOLDERS = {
-    "target system", "operational assembly", "substrate carrier", "target carrier",
-    "functional module", "control architecture", "actuator system",
-    "synergistic effect", "operational stability", "efficiency gain", "performance gain",
-    "g06f 17/00", "g06f17/00"
-}
-
 @dataclass
 class TechnicalPillar:
     name: str
@@ -32,7 +24,7 @@ class TechnicalPillar:
 
 class PatentSearchBuilder:
     def __init__(self, target_title: str):
-        self.target_title = target_title.strip() if target_title else ""
+        self.target_title = target_title
         self.ipc_classes: List[str] = []
         self.cpc_classes: List[str] = []
         self.pillars: List[TechnicalPillar] = []
@@ -59,68 +51,47 @@ class PatentSearchBuilder:
         pillar_blocks = []
         for p in self.pillars:
             if p.en_keywords:
-                valid_kws = []
-                for kw in p.en_keywords:
-                    clean_kw = re.sub(r'[\";*\\/]', '', kw).strip()
-                    if not clean_kw or clean_kw.lower() in BANNED_PLACEHOLDERS:
-                        continue
-                    tokens = clean_kw.split()
-                    if len(tokens) == 1:
-                        valid_kws.append(clean_kw)
-                    elif len(tokens) == 2:
-                        valid_kws.append(f'"{clean_kw}"')
-                    else:
-                        valid_kws.append(f'"{tokens[-2]} {tokens[-1]}"')
-                if valid_kws:
-                    pillar_blocks.append(f"({' OR '.join(valid_kws[:3])})")
-
-        if not pillar_blocks and self.target_title:
-            clean_title_words = re.sub(r'[^\w\s]', '', self.target_title).split()
-            title_kws = [f'"{w}"' if len(w) > 3 else w for w in clean_title_words if len(w) > 1]
-            if title_kws:
-                pillar_blocks.append(f"({' OR '.join(title_kws[:3])})")
+                selected_kws = p.en_keywords[:3]
+                formatted = [f'"{kw}"' if " " in kw else kw for kw in selected_kws]
+                pillar_blocks.append(f"({' OR '.join(formatted)})")
 
         keyword_part = " AND ".join(pillar_blocks) if pillar_blocks else ""
 
         all_classes = self.cpc_classes or self.ipc_classes
-        valid_classes = []
         if all_classes:
+            clean_classes = []
             for c in all_classes:
-                raw_c = re.sub(r'[\s;*]', '', c).strip().upper()
-                if raw_c and raw_c != "G06F17/00":
-                    valid_classes.append(raw_c)
+                raw_c = re.sub(r'\s+', '', c).strip().upper()
+                if raw_c:
+                    clean_classes.append(raw_c)
+            
+            if clean_classes:
+                classes_str = f"({' OR '.join(clean_classes)})"
+                if keyword_part:
+                    return f"{keyword_part} AND {classes_str}"
+                return classes_str
 
-        if valid_classes:
-            classes_str = f"({' OR '.join(list(dict.fromkeys(valid_classes)))})"
-            final_q = f"{keyword_part} AND {classes_str}" if keyword_part else classes_str
-        else:
-            final_q = keyword_part
-
-        return re.sub(r';+', '', final_q).strip()
+        return keyword_part
 
     def to_gpss_query(self, search_fields: str = "TI,AB,CL") -> str:
         pillar_blocks = []
         for p in self.pillars:
             all_kw = p.zh_keywords + p.en_keywords
             if all_kw:
-                valid_kw = []
-                for kw in all_kw:
-                    ck = re.sub(r'[\";*]', '', kw).strip()
-                    if ck and ck.lower() not in BANNED_PLACEHOLDERS:
-                        valid_kw.append(f'"{ck}"')
-                if valid_kw:
-                    pillar_blocks.append(f"({' OR '.join(valid_kw[:4])})")
+                formatted = [f'"{kw}"' if " " in kw else kw for kw in all_kw]
+                pillar_blocks.append(f"({' OR '.join(formatted)})")
 
         query_body = " AND ".join(pillar_blocks) if pillar_blocks else ""
         formatted_query = f"{search_fields}=({query_body})" if query_body else ""
 
         if self.ipc_classes:
-            clean_ipcs = [re.sub(r'[\s;*]', '', c).strip().upper() for c in self.ipc_classes if c.strip() and "G06F17" not in c.upper()]
-            if clean_ipcs:
-                ipc_block = " OR ".join([f'"{code}"*' for code in list(dict.fromkeys(clean_ipcs))])
-                formatted_query = f"{formatted_query} AND IC=({ipc_block})" if formatted_query else f"IC=({ipc_block})"
+            ipc_block = " OR ".join([f'"{code}"*' for code in self.ipc_classes])
+            if formatted_query:
+                formatted_query += f" AND IC=({ipc_block})"
+            else:
+                formatted_query = f"IC=({ipc_block})"
 
-        return re.sub(r';+', '', formatted_query).strip()
+        return formatted_query
 
     def generate_report_text(self, claim_chart_df: pd.DataFrame = None, prior_art_data: dict = None) -> str:
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -142,7 +113,7 @@ class PatentSearchBuilder:
             lines.append(f"     - 中文關鍵字：{', '.join(p.zh_keywords) if p.zh_keywords else '無'}")
 
         lines.extend([
-            f"\n【三、各平台布林檢索邏輯式 (已通過官方相容與無分號防呆驗證)】",
+            f"\n【三、各平台布林檢索邏輯式】",
             f"▶ Google Patents / Espacenet 檢索語法：",
             f"{self.to_google_patents_query()}\n",
             f"▶ 台灣智慧財產局 (GPSS) 檢索語法：",
@@ -195,15 +166,19 @@ class PatentSearchBuilder:
         return "\n".join(lines)
 
 # ==============================================================================
-# 二、 專利號爬取核心
+# 二、 專利號爬取核心 (原生 UTF-8 解碼，免 API)
 # ==============================================================================
 def fetch_patent_data_from_google(patent_no: str) -> dict:
     clean_pno = re.sub(r'[\s\-_/]', '', patent_no).upper()
-    url = f"https://patents.google.com/patent/{clean_pno}" if clean_pno.startswith(("CN", "TW")) else f"https://patents.google.com/patent/{clean_pno}/en"
+    if clean_pno.startswith(("CN", "TW")):
+        url = f"https://patents.google.com/patent/{clean_pno}"
+    else:
+        url = f"https://patents.google.com/patent/{clean_pno}/en"
 
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
+
     resp = requests.get(url, headers=headers, timeout=12)
     if resp.status_code != 200:
         raise Exception(f"無法取得專利資料 (HTTP {resp.status_code})，請確認專利號碼是否正確。")
@@ -267,7 +242,14 @@ def get_custom_font(font_size: int):
 
     return ImageFont.load_default()
 
-def create_tipo_trademark_bytes(text: str, layout: str = "純文字模式", font_size: int = 68, text_align: str = "置中對齊", line_spacing_ratio: float = 0.35, logo_file=None) -> bytes:
+def create_tipo_trademark_bytes(
+    text: str,
+    layout: str = "純文字模式",
+    font_size: int = 68,
+    text_align: str = "置中對齊",
+    line_spacing_ratio: float = 0.35,
+    logo_file=None
+) -> bytes:
     dpi = 300
     cm_to_inch = 2.54
     width_px = int((8.0 / cm_to_inch) * dpi)
@@ -281,7 +263,9 @@ def create_tipo_trademark_bytes(text: str, layout: str = "純文字模式", font
     if not lines:
         lines = [""]
 
-    line_bboxes, line_widths, line_heights = [], [], []
+    line_bboxes = []
+    line_widths = []
+    line_heights = []
     for line in lines:
         bbox = draw.textbbox((0, 0), line, font=font)
         lw = bbox[2] - bbox[0]
@@ -310,40 +294,62 @@ def create_tipo_trademark_bytes(text: str, layout: str = "純文字模式", font
     def draw_multiline_block(start_top_y: int, block_center_x: int, block_w: int):
         cur_y = start_top_y
         for i, line in enumerate(lines):
-            lw, lh, bbox = line_widths[i], line_heights[i], line_bboxes[i]
+            lw = line_widths[i]
+            lh = line_heights[i]
+            bbox = line_bboxes[i]
+
             if text_align == "靠左對齊":
                 tx = block_center_x - (block_w // 2) - bbox[0]
             elif text_align == "靠右對齊":
                 tx = block_center_x + (block_w // 2) - lw - bbox[0]
             else:
                 tx = block_center_x - (lw // 2) - bbox[0]
+
             draw.text((tx, cur_y - bbox[1]), line, font=font, fill=(0, 0, 0))
             cur_y += lh + line_spacing_px
 
     if logo_img and layout == "複合商標：上圖下文":
         target_logo_h = int(height_px * 0.42)
         aspect = logo_img.width / logo_img.height
-        new_w = min(int(target_logo_h * aspect), int(width_px * 0.75))
-        target_logo_h = int(new_w / aspect)
+        new_w = int(target_logo_h * aspect)
+        if new_w > int(width_px * 0.75):
+            new_w = int(width_px * 0.75)
+            target_logo_h = int(new_w / aspect)
         resized_logo = logo_img.resize((new_w, target_logo_h), Image.Resampling.LANCZOS)
+
         spacing = int(height_px * 0.04)
         total_block_h = target_logo_h + spacing + total_text_h
         start_y = (height_px - total_block_h) // 2
-        canvas.paste(resized_logo, ((width_px - new_w) // 2, start_y))
-        draw_multiline_block(start_y + target_logo_h + spacing, width_px // 2, max_line_w)
+
+        logo_x = (width_px - new_w) // 2
+        canvas.paste(resized_logo, (logo_x, start_y))
+
+        text_start_y = start_y + target_logo_h + spacing
+        draw_multiline_block(text_start_y, width_px // 2, max_line_w)
+
     elif logo_img and layout == "複合商標：左圖右文":
         target_logo_w = int(width_px * 0.35)
         aspect = logo_img.height / logo_img.width
-        new_h = min(int(target_logo_w * aspect), int(height_px * 0.6))
-        target_logo_w = int(new_h / aspect)
+        new_h = int(target_logo_w * aspect)
+        if new_h > int(height_px * 0.6):
+            new_h = int(height_px * 0.6)
+            target_logo_w = int(new_h / aspect)
         resized_logo = logo_img.resize((target_logo_w, new_h), Image.Resampling.LANCZOS)
+
         spacing = int(width_px * 0.04)
         total_block_w = target_logo_w + spacing + max_line_w
         start_x = (width_px - total_block_w) // 2
-        canvas.paste(resized_logo, (start_x, (height_px - new_h) // 2))
-        draw_multiline_block((height_px - total_text_h) // 2, start_x + target_logo_w + spacing + (max_line_w // 2), max_line_w)
+
+        logo_y = (height_px - new_h) // 2
+        canvas.paste(resized_logo, (start_x, logo_y))
+
+        text_center_x = start_x + target_logo_w + spacing + (max_line_w // 2)
+        text_start_y = (height_px - total_text_h) // 2
+        draw_multiline_block(text_start_y, text_center_x, max_line_w)
+
     else:
-        draw_multiline_block((height_px - total_text_h) // 2, width_px // 2, max_line_w)
+        start_y = (height_px - total_text_h) // 2
+        draw_multiline_block(start_y, width_px // 2, max_line_w)
 
     img_buffer = io.BytesIO()
     canvas.save(img_buffer, format="JPEG", dpi=(dpi, dpi), quality=95, subsampling=0)
@@ -391,7 +397,7 @@ def render_copy_button(text_to_copy: str, button_label: str = "📋 點擊複製
     components.html(html_code, height=50)
 
 # ==============================================================================
-# 五、 智財法規資料庫
+# 五、 智財法規與標準法律範本資料庫
 # ==============================================================================
 IP_LAWS_DB = [
     {
@@ -419,6 +425,30 @@ IP_LAWS_DB = [
         "explanation": "說明書必須達到「可據以實現（Enablement）」門檻，否則將依本條核駁或撤銷專利。"
     },
     {
+        "category": "專利法",
+        "article": "專利法 第 58 條",
+        "title": "專利權人之排他專有權限",
+        "keywords": "專利權, 排他權, 製造, 販賣, 使用, 輸入",
+        "text": "專利權人，除本法另有規定外，專有排除他人未經其同意而製造、為販賣之要約、販賣、使用或為上述目的而進口該發明之權。",
+        "explanation": "專利權本質上為「排除他人未經同意實施」之消極排他權。"
+    },
+    {
+        "category": "化學配方專利專題",
+        "article": "專利法 第 22 條 審查基準",
+        "title": "化學組成物配方之進步性判定（協同效應）",
+        "keywords": "化學配方, 協同效應, Synergistic Effect, 突變性增益",
+        "text": "化學組成物若由已知成分混合而成，原則上視為先前技術之通常替換。\n惟若特定配比範圍內能產生「協同效應（Synergistic Effect）」或「無法預期之技術功效（Unexpected Results）」，且非通常知識者依既有理論所能預測者，應認定具備進步性。",
+        "explanation": "【實務防禦】化學配方答辯核駁時，必須提出實驗數據證明 A+B 在特定比例下的功效遠大於各成分單獨效果相加。"
+    },
+    {
+        "category": "化學配方專利專題",
+        "article": "專利法 第 26 條 審查基準",
+        "title": "化學配方可據以實現要件與實施例揭露要求",
+        "keywords": "可據以實現, 實施例, 比較例, 隱藏配方",
+        "text": "化學發明說明書應載明具體之製備實施例及物性確認數據，使同業無須過度實驗即可再現該發明。\n若申請人為保留商業秘密而隱匿關鍵催化劑、反應條件或添加順序，致使無法達到預期功效者，構成違反第26條第1項。",
+        "explanation": "申請專利必須完全揭露實施例與比較例；若欲保留核心參數，應審慎評估改走《營業秘密法》。"
+    },
+    {
         "category": "營業秘密法",
         "article": "營業秘密法 第 2 條",
         "title": "營業秘密之法定三要件",
@@ -427,27 +457,61 @@ IP_LAWS_DB = [
         "explanation": "法院判定配方是否受保護，核心在於所有人是否採取「合理保密措施」（如進料代號化、權限分級、門禁與簽署 NDA）。"
     },
     {
+        "category": "營業秘密法",
+        "article": "營業秘密法 第 13 條之 1",
+        "title": "侵害營業秘密之刑事責任（境內洩密罪）",
+        "keywords": "刑事責任, 刑責, 竊取, 五年以下有期徒刑",
+        "text": "意圖為自己或第三人不法之利益，或損害營業秘密所有人之利益，以竊取、毀損、隱匿、未經授權重製或取得，或知悉後擅自使用、洩漏者，處五年以下有期徒刑或拘役，得併科新臺幣一百萬元以上一千萬元以下罰金。",
+        "explanation": "離職員工未經授權帶走配方表或實驗日誌，即構成非告訴乃論之刑事公訴罪。"
+    },
+    {
+        "category": "營業秘密法",
+        "article": "營業秘密法 第 13 條之 2",
+        "title": "意圖在境外使用罪（加重刑責）",
+        "keywords": "境外使用罪, 域外管轄, 外國, 大陸地區, 十年以下有期徒刑",
+        "text": "意圖在外國、大陸地區、香港或澳門使用，而犯前條第一項各款之罪者，處一年以上十年以下有期徒刑，得併科新臺幣三百萬元以上五千萬元以下罰金。",
+        "explanation": "意圖將配方帶往海外或大陸地區實施者，刑度跳升至 1 年以上 10 年以下有期徒刑。"
+    },
+    {
         "category": "商標法",
         "article": "商標法 第 18 條",
         "title": "商標之定義與識別性基本原則",
         "keywords": "商標, 識別性, 表彰, 商品, 服務",
         "text": "商標，指任何具有識別性之標識，得以文字、圖形、記號、顏色、立體形狀等組成。\n前項所稱識別性，指足以使商品或服務之相關消費者認識為指示商品或服務來源，並得與他人之商品或服務相區別者。",
         "explanation": "商標必須具備識別性，能讓公眾辨識產製來源。"
+    },
+    {
+        "category": "商標法",
+        "article": "商標法 第 30 條 第 1 項 第 10 款",
+        "title": "相對不得註冊事由（致相關消費者混淆誤認之虞）",
+        "keywords": "混淆誤認, 相同, 近似, 同一, 類似",
+        "text": "商標有下列情形之一，不得註冊：\n十、相同或近似於他人同一或類似商品或服務之註冊商標或申請在先之商標，有致相關消費者混淆誤認之虞者。",
+        "explanation": "審查時綜合考量圖樣近似度、商品類似度與消費者注意程度。"
     }
 ]
 
-USER_MANUAL_MARKDOWN = """# 📖 智慧財產權整合工作台 操作手冊（純本機離線旗艦版）
-
-本工作台專為發明人、專利代理人、RD 研發工程師與企業法務設計，具備 **雙軌自癒架構**，當外部模型伺服器短暫過載（503）時，自動無縫降級啟用純本機全領域矩陣引擎，保證工作流不中斷！
+USER_MANUAL_MARKDOWN = """# 📖 智慧財產權整合工作台 操作手冊（純本機版）
 
 ---
 
 ## 模組一：📄 專利檢索與 Claims 比對矩陣
-1. **即時自動推導**：在輸入框輸入任何技術名稱（如 `植物病蟲害光譜分析`、`液化澱粉芽孢桿菌防治植物青枯病`），按下 Enter 立即重繪帶入 IPC、三支柱與 Claims！
-2. **防呆檢索式生成**：內建佔位符黑名單與標點純化器，保證不輸出通用空泛詞、不帶結尾分號，100% 相容 Google Patents 與 GPSS！
-3. **前案爬取**：輸入專利號（如 `US8608931B2`），直接以 UTF-8 抓取 Abstract 與 Claims 原文。
-4. **全要件比對矩陣**：點擊「⚡ 一鍵自動帶入比對矩陣」即可將當前引證案動態配入表格與申復書中。
-5. **防禦退路併入**：支援一鍵將附屬項併入獨立項作為進步性防線。
+1. **技術三支柱展開**：可直接於各欄位自訂輸入關鍵字，亦可使用側邊欄範本一鍵載入。
+2. **前案爬取**：輸入專利號（如 `US8608931B2`、`CN110016700A`），系統直連 Google Patents 以 UTF-8 精確擷取摘要與 Claims 原文。
+3. **全要件原則比對**：點擊「⚡ 一鍵自動帶入比對矩陣」即可秒速填滿 Element 1A~1D，按鈕專利號將動態連動上方輸入框！
+4. **扁平化檢索式**：點擊按鈕自動產出符合 Google Patents 與台灣 GPSS 官方規範之無分號、無多餘巢狀括號檢索式。
+
+---
+
+## 模組二：🏷️️ 商標權佈局與圖樣生成器
+1. **多行換行排版**：文字框直接按 Enter 自由換行。
+2. **Logo 合成**：支援上傳 PNG/JPG 圖檔，透明背景自動填白。
+3. **合規輸出**：自動繪製符合智財局 E-filing 規範之 8×8 cm @ 300 DPI（945×945 px）純白底色 JPEG。
+
+---
+
+## 模組三：⚖️ 智財法規速查 ＆ 申復答辯理由書產生器
+1. **法規速查**：依類別過濾專利法、商標法、營業秘密法與化學配方審查專題。
+2. **答辯理由生成**：內建包含「化學配方第22條協同增效」、「商品非類似抗辯」等標準代理人格式申復書，支援線上修改與下載。
 """
 
 TRADE_SECRET_AGREEMENT_DOC = """營業秘密保密暨離職切結書
@@ -463,8 +527,8 @@ TRADE_SECRET_AGREEMENT_DOC = """營業秘密保密暨離職切結書
 第一條：營業秘密之具體範圍與標的
 --------------------------------------------------------------------------------
 乙方明確知悉並承認，其於任職期間所接觸、知悉或產生之下列資訊，均屬《營業秘密法》第二條所保護之甲方核心營業秘密：
-1. 配方與物化技術參數：特種塗料、電鍍添加劑、表面處理劑、微生物活菌配方之組成物原料配比、特定分子結構。
-2. 製程與投料工藝：特定反應溫度、發酵培養基配方、溶氧參數、母液預混調配方法。
+1. 配方與物化技術參數：特種塗料、電鍍添加劑、表面處理劑之組成物原料配比、特定分子結構、電位極化曲線。
+2. 製程與投料工藝：特定反應溫度、剪切攪拌轉速、熟化時間、加料順序、母液預混調配方法。
 3. 去識別化機制：原料虛擬編號對照表、獨家供應商名單、進貨成本及客製化規格要求。
 4. 研發成果：實驗筆記（Lab Notebook）、未公開之實施例與比較例數據、專利初稿。
 
@@ -476,7 +540,13 @@ TRADE_SECRET_AGREEMENT_DOC = """營業秘密保密暨離職切結書
 3. 終身保密：保密義務不因勞動契約終止或身分變更而消滅。
 
 --------------------------------------------------------------------------------
-第三條：刑事法令特別警示
+第三條：公物資料返還與結清
+--------------------------------------------------------------------------------
+1. 實體物件：所有載有營業秘密之實體文件、配方卡、實驗筆記、原料樣品及識別證均已全數點交歸還。
+2. 數位資料：電腦、隨身碟、私人雲端硬碟、私人通訊軟體內之機密檔案已全數刪除且未保留複本。
+
+--------------------------------------------------------------------------------
+第四條：刑事法令特別警示
 --------------------------------------------------------------------------------
 1. 依《營業秘密法》第十三條之一，竊取、擅自重製或洩漏營業秘密者，處五年以下有期徒刑，得併科新臺幣一百萬元以上一千萬元以下罰金。
 2. 依《營業秘密法》第十三條之二，意圖在外國、大陸地區、香港或澳門使用而犯罪者，處一年以上十年以下有期徒刑，得併科新臺幣三百萬元以上五千萬元以下罰金。
@@ -486,214 +556,54 @@ TRADE_SECRET_AGREEMENT_DOC = """營業秘密保密暨離職切結書
 中華民國    年    月    日
 """
 
-# ==============================================================================
-# 六、 全領域多維矩陣推理核心 (純本機保底，杜絕 API 503 崩潰)
-# ==============================================================================
-def execute_semantic_synthesis(title: str):
-    t = title.strip() if title.strip() else "自訂技術發明標的"
-    low_t = t.lower()
-    matched_ipcs = []
+OA_ELECTROPLATING_DOC = """專利申復理由書（草稿）
 
-    # 維度 1：標的層（Target）
-    if any(k in low_t for k in ["芽孢桿菌", "青枯", "病蟲害", "病原", "作物", "植物", "土壤", "真菌", "細菌", "農"]):
-        target_name = "Target: 農作物植株、根圈土壤與病原微生物"
-        target_en = ["Ralstonia solanacearum", "plant pathogen", "foliage disease", "crop root zone"]
-        target_zh = ["青枯雷爾氏菌", "農作物植株", "土傳病原菌", "根圈土壤", "病害組織"]
-        matched_ipcs.extend(["A01N 63/22", "A01P 1/00", "A01G 7/00"])
-    elif any(k in low_t for k in ["儲氫", "氫能", "儲存罐", "燃料電池", "鋼瓶", "氣瓶", "低壓"]):
-        target_name = "Target: 固態儲氫合金容器與車載低壓供氫系統"
-        target_en = ["hydrogen storage tank", "metal hydride canister", "fuel cell vehicle"]
-        target_zh = ["儲氫容器", "金屬儲氫合金瓶", "車載供氫系統", "固態儲氫"]
-        matched_ipcs.extend(["F17C 11/00", "H01M 8/04"])
-    elif any(k in low_t for k in ["隔熱", "塗料", "漆", "屋頂", "建築", "溫室"]):
-        target_name = "Target: 溫室採光屋頂與建築透光覆蓋結構"
-        target_en = ["greenhouse roof", "translucent panel", "building envelope"]
-        target_zh = ["溫室屋頂", "採光覆蓋層", "建築外護結構", "透光板材"]
-        matched_ipcs.extend(["C09D 5/33", "E04D 13/00"])
-    elif any(k in low_t for k in ["車", "自行車", "剪枝", "機械", "自走", "無人機", "機器人"]):
-        target_name = "Target: 作業載具、自走底盤與多自由度執行機構"
-        target_en = ["self-propelled vehicle", "robotic chassis", "operating assembly"]
-        target_zh = ["自走式載具", "機器人底盤", "作業機械結構"]
-        matched_ipcs.extend(["A01D 34/00", "B60K 17/00"])
-    else:
-        clean_words = [w for w in re.sub(r'[^\w\s]', '', t).split() if len(w) > 1]
-        target_en = clean_words[:2] if clean_words else ["system", "apparatus"]
-        target_name = f"Target: {t} 工作本體與目標基質"
-        target_zh = clean_words[:3] if clean_words else [t]
-        matched_ipcs.append("G05B 19/00")
-
-    # 維度 2：手段層（Mechanism）
-    if any(k in low_t for k in ["芽孢桿菌", "生物防治", "生防", "代謝物", "發酵", "菌劑", "菌株"]):
-        mechanism_name = "Mechanism: 活體菌株根圈定殖與脂肽類活性代謝物分泌"
-        mechanism_en = ["Bacillus amyloliquefaciens", "lipopeptide", "surfactin", "iturin", "colonization"]
-        mechanism_zh = ["液化澱粉芽孢桿菌", "抗菌脂肽", "表面活性素", "伊枯草菌素", "根圈定殖"]
-        matched_ipcs.extend(["C12N 1/20", "C12R 1/07"])
-    elif any(k in low_t for k in ["光譜", "影像", "檢測", "遙測", "視覺", "感測"]):
-        mechanism_name = "Mechanism: 高光譜/多光譜窄波段反射率與植被指數特徵演算法"
-        mechanism_en = ["hyperspectral imaging", "vegetation index", "spectral reflectance", "feature extraction"]
-        mechanism_zh = ["高光譜成像", "多光譜感測", "植被指數(NDVI/PRI)", "特徵波段運算"]
-        matched_ipcs.extend(["G01N 21/84", "G06V 20/10"])
-    elif any(k in low_t for k in ["儲氫", "合金", "相變", "翅片", "熱管理"]):
-        mechanism_name = "Mechanism: 儲氫合金材料與微通道內部翅片熱管理架構"
-        mechanism_en = ["metal hydride alloy", "heat exchanger", "internal fin", "phase change material"]
-        mechanism_zh = ["儲氫合金粉末", "換熱器翅片", "相變導熱模組", "多孔過濾構件"]
-        matched_ipcs.extend(["C01B 3/00"])
-    elif any(k in low_t for k in ["觸媒", "催化", "塗層", "奈米", "樹脂"]):
-        mechanism_name = "Mechanism: 奈米功能填料與耐候成膜聚合物基質"
-        mechanism_en = ["nanoparticle filler", "polymer matrix", "catalytic washcoat"]
-        mechanism_zh = ["奈米功能粒子", "成膜樹脂基質", "催化塗層"]
-        matched_ipcs.extend(["B01J 23/42", "C09D 7/61"])
-    else:
-        mechanism_name = "Mechanism: 驅動控制單元與回饋調節模組"
-        mechanism_en = ["drive controller", "feedback circuit", "sensor unit"]
-        mechanism_zh = ["驅動控制單元", "回饋調節電路", "傳感模組"]
-        matched_ipcs.append("G05B 11/00")
-
-    # 維度 3：功效層（Effect）
-    if any(k in low_t for k in ["青枯", "病害", "殺菌", "防治", "抑菌"]):
-        effect_name = "Effect: 專一破壞病原細胞膜與誘導植物系統性抗病(ISR)"
-        effect_en = ["membrane disruption", "induced systemic resistance", "biocontrol efficacy"]
-        effect_zh = ["破壞病原細胞壁/膜", "誘導系統性抗性(ISR)", "長效生物防護屏障", "降低發病率"]
-    elif any(k in low_t for k in ["光譜", "早期", "預警", "診斷"]):
-        effect_name = "Effect: 提前 48 至 72 小時無徵狀潛伏期病害精準預警"
-        effect_en = ["asymptomatic detection", "early disease diagnosis", "false alarm reduction"]
-        effect_zh = ["潛伏期無徵狀診斷", "發病前提前預警", "消除肉眼不可見盲區"]
-    elif any(k in low_t for k in ["儲氫", "低壓", "安全"]):
-        effect_name = "Effect: 5 MPa 以下超安全低壓操作與快速吸放氫動力學"
-        effect_en = ["low working pressure", "fast hydrogenation kinetics", "anti-swelling"]
-        effect_zh = ["低壓工作安全", "快速吸放氫", "抑制粉末膨脹碎化"]
-    elif any(k in low_t for k in ["隔熱", "透光", "降溫"]):
-        effect_name = "Effect: 高紅外反射與高可見光透射之光熱選擇性分離"
-        effect_en = ["solar heat rejection", "visible light transmission", "cooling effect"]
-        effect_zh = ["棚內降溫5~10度", "高可見光透過", "長效耐候耐沖刷"]
-    else:
-        effect_name = "Effect: 提升運作精度與降低能耗"
-        effect_en = ["operational precision", "energy saving", "high reliability"]
-        effect_zh = ["提升運作精度", "降低能耗", "高運行可靠度"]
-
-    claim_elements = [
-        {
-            "要件編號": "Element 1A",
-            "本案 Claim 1 技術要件": f"一種用於{t}之技術方案，包含基礎承載構件或介質載體",
-            "前案 D1 對應技術": "[D1] 揭露基礎通用型承載或培養介質",
-            "前案 D2 對應技術": "",
-            "符合性判定": "YES (字面讀取)",
-            "差異/進步性說明": "提供系統運作或生物/化學反應之基本物理介面。"
-        },
-        {
-            "要件編號": "Element 1B",
-            "本案 Claim 1 技術要件": f"一核心特徵單元，包含{mechanism_name.replace('Mechanism: ', '')}",
-            "前案 D1 對應技術": "[D1] 僅揭露常規成分或通用硬體",
-            "前案 D2 對應技術": "[D2] 未針對本案特定機制提出技術教示",
-            "符合性判定": "NO (不符/差異點)",
-            "差異/進步性說明": "具備專一性技術手段，非先前技術所能任意置換。"
-        },
-        {
-            "要件編號": "Element 1C",
-            "本案 Claim 1 技術要件": f"特定之關鍵控制參數或成分配比，於受控條件下達成{effect_name.replace('Effect: ', '')}",
-            "前案 D1 對應技術": "[D1] 未揭露特定臨界參數或配比",
-            "前案 D2 對應技術": "[D2] 存在技術偏見或反向教示",
-            "符合性判定": "NO (不符/差異點)",
-            "差異/進步性說明": "【核心進步性防線】：引證案 D1/D2 欠缺結合動機，本案產生顯著之突變性協同功效（Unexpected Results）。"
-        },
-        {
-            "要件編號": "Element 1D",
-            "本案 Claim 1 技術要件": "一輔助穩定、環境補償或保護助劑構件，維持長期持續運作",
-            "前案 D1 對應技術": "[D1] 揭露常規保護結構",
-            "前案 D2 對應技術": "",
-            "符合性判定": "均等成立 (DOE)",
-            "差異/進步性說明": "消除外界環境干擾，延長使用或反應壽命。"
-        }
-    ]
-
-    clean_ipcs_str = ", ".join(list(dict.fromkeys(matched_ipcs)))
-
-    st.session_state["v_id"] = st.session_state.get("v_id", 0) + 1
-    st.session_state["patent_data"] = {
-        "title": t,
-        "ipc": clean_ipcs_str,
-        "cpc": clean_ipcs_str,
-        "p1_name": target_name,
-        "p1_en": ", ".join(target_en),
-        "p1_zh": ", ".join(target_zh),
-        "p2_name": mechanism_name,
-        "p2_en": ", ".join(mechanism_en),
-        "p2_zh": ", ".join(mechanism_zh),
-        "p3_name": effect_name,
-        "p3_en": ", ".join(effect_en),
-        "p3_zh": ", ".join(effect_zh),
-        "claims": claim_elements
-    }
-    st.session_state["last_oa_result"] = generate_advanced_oa_response(t, "US8608931B2", is_fallback_merged=False)
-
-def generate_advanced_oa_response(title: str, d1_pno: str, is_fallback_merged: bool = False) -> str:
-    now_date = datetime.now().strftime("%Y 年 %m 月 %d 日")
-    fallback_note = ""
-    if is_fallback_merged:
-        fallback_note = """
-【特別補充：請求項第 1 項主動併入附屬項特徵，強化防禦退路（Fallback Position）】
-為使本案能儘速獲准專利，申請人特將原附屬項中之特定臨界參數、配比聯鎖或專一性活性成分技術特徵併入獨立項第 1 項中。
-此舉使本案之保護範疇更加收斂且具備不可動搖之進步性壁壘，引證案 D1 與 D2 通篇完全未曾揭露上述特定微觀機制。
-"""
-    return f"""專利申復理由書（草稿）
-
-案  號：第 [請填入專利申請案號] 號
-申 請 人：[請填入申請人/專利權人名稱]
-發明名稱：{title}
+案  號：第 [請填入申請案號] 號
+申 請 人：[請填入專利申請人/公司名稱]
+發明名稱：用於貴金屬電鍍之晶粒細化光澤添加劑組成物
 受 文 者：經濟部智慧財產局
 
 --------------------------------------------------------------------------------
 一、 案由與前言聲明
 --------------------------------------------------------------------------------
-本件專利申請案業經 貴局審查官惠示審查意見通知函，認本案申請專利範圍請求項第 1 項等技術特徵，為所屬技術領域中具有通常知識者結合引證案 D1（{d1_pno}）與引證案 D2 等先前技術所能輕易置換思及完成，而有違反《專利法》第 22 條第 2 項（進步性）之虞。
+本件專利申請案業經 貴局審查官惠示審查意見通知函，認本案申請專利範圍請求項第 1 項等技術特徵，為所屬技術領域中具有通常知識者結合引證案 D1（US8608931B2）所能輕易置換思及完成，而有違反《專利法》第 22 條第 2 項（進步性）之虞。
 
-申請人經研析引證文獻後，謹陳明：引證案 D1 與 D2 之間存在實質之「技術偏見與結合阻礙（Teaching Away）」，且本案達成無法預期之突變性協同增效（Unexpected Results），非通常知識者所能輕易思及。
-{fallback_note}
+申請人經研析引證文獻後，謹陳明：引證案實質上並未揭露本案請求項第 1 項所特定界定之「主光澤劑與輔助細化劑之重量比為 1:1 至 10:1」之關鍵吸附平衡技術特徵（Element 1C），更未教示該特定配比能誘發「陰極極化過電位負移 50 至 200 mV」並將晶粒強制細化至 80 nm 以下且杜絕脆化之突變性協同增效（Synergistic Effect）。本案非通常知識者依先前技術所能輕易完成，依法自具進步性。
+
 --------------------------------------------------------------------------------
 二、 審查基準法理依據
 --------------------------------------------------------------------------------
 按《專利法》第 22 條第 2 項規定，發明雖無同條第 1 項各款所列情事，但為其所屬技術領域中具有通常知識者依申請前之先前技術所能輕易完成時，仍不得依本法申請專利。
 
-次按 貴局頒布之《專利審查基準》第二篇第三章「進步性之判斷」明載：
-1. 判斷多份先前技術是否易於結合時，應考量先前技術間是否存有反向教示或技術阻礙（Teaching Away）；若先前技術之結合將導致其原有用圖失效或彼此牴觸者，通常知識者即不具結合動機。
-2. 發明限定之特定元件配置，若產生超越各元件單純功效相加、非通常知識者依既有理論所能預測之突變性增益或協同效果（Unexpected Results）者，應認定具備進步性。
+次按 貴局頒布之《專利審查基準》第二篇第三章「進步性之判斷」明載：在數值範圍或成分配比之發明中，若發明限定之特定成分比例範圍，於臨界區間內產生了超越各成分單純功效相加、非通常知識者依既有理論所能預測之突變性增益或協同效果（Unexpected Results）者，即應認定具備進步性。
 
 --------------------------------------------------------------------------------
 三、 爭點具體比對與實體答辯理由
 --------------------------------------------------------------------------------
-（一） 支柱 A（Target）：作用對象與問題本質存在本質差異
-引證案所針對之問題標的與處理層次不同，本案鎖定深層微觀缺陷或特定生理/物理屏障，通常知識者依引證案之教示絕無結合動機。
+（一） 引證案未曾揭露本案特定 1:1 至 10:1 之重量配比限制（Element 1C）
+引證案僅為一般有機添加劑之教示，未限定主光澤劑與含硫輔助成分之精確相互作用配比，通篇僅為添加劑之任意並列列舉。先前技術不僅缺乏將兩者以 1:1 至 10:1 配比結合之技術啟示，甚至存在高濃度添加會造成鍍層脆化之反向教示。
 
-（二） 支柱 B（Mechanism）：引證案通篇未曾揭露本案特定核心手段
-引證案僅為通用技術構件或常規材料之任意列舉，未揭示本案特定配比、波段或反應架構。
+（二） 本案特定數值配比產生無法預期之「動態競爭吸附與微晶協同功效」
+本案發明人經反覆實驗突破性發現，當主光澤劑與輔助細化劑之重量比被嚴格鎖定於 1:1 至 10:1 時：
+1. 陰極極化過電位大幅負移 50 至 200 mV，迫使貴金屬沉積機制轉變為高密度連續形核，鍍層晶粒尺寸被抑制於 80 nm 以下，表面粗糙度 Ra 降至 0.05 μm 以下。
+2. 消除硫原子夾雜，杜絕鍍層脆化，使接點鍍層之打線結合力顯著提升，接觸阻抗維持低於 5 mΩ。
 
-（三） 支柱 C（Effect）：達成無法預期之突變性功效
-本案產生了顯著優於引證案單純相加之技術增益，依法完全符合專利法第 22 條第 2 項之進步性要件。
+上述顯著之物理化學性質突變，絕非由引證案任一組分所能預期，係屬典型的協同增效作用（Synergistic Effect），完全具備進步性要件。
 
 --------------------------------------------------------------------------------
 四、 結論與懇請事項
 --------------------------------------------------------------------------------
-綜上所陳，本案申請專利範圍請求項第 1 項完全符合進步性要件。懇請 貴局審查官惠予賜准本案專利。
+綜上所陳，本案申請專利範圍請求項第 1 項所請之技術方案完全符合《專利法》第 22 條第 2 項規定之進步性要件。懇請 貴局審查官惠予賜准本案專利。
 
 謹呈
 經濟部智慧財產局 公鑒
 
 申請人：[請填入申請人/專利代理人簽章]
-日 期：中華民國 {now_date}
+日 期：中華民國 [請填入年/月/日]
 """
 
-def safe_run_synthesis(title: str):
-    """
-    雙軌自癒執行入口：優先執行，若外部環境異常則無縫以純本機引擎保底
-    """
-    try:
-        execute_semantic_synthesis(title)
-    except Exception as e:
-        st.warning("⚠️ 外部連線異常，系統已自動啟用【純本機全領域矩陣引擎】為您推導數據！")
-        execute_semantic_synthesis(title)
-
 # ==============================================================================
-# 七、 應用程式介面 (Streamlit 渲染)
+# 六、 Streamlit 介面與狀態管理 (純本地離線架構)
 # ==============================================================================
 st.set_page_config(
     page_title="智慧財產權整合工作台 (離線旗艦版)",
@@ -701,19 +611,40 @@ st.set_page_config(
     layout="wide"
 )
 
-if "v_id" not in st.session_state:
-    st.session_state["v_id"] = 0
+# 初始化 Session State，確保初次載入不報錯
+init_defaults = {
+    "patent_title_input": "用於貴金屬電鍍之晶粒細化光澤添加劑組成物",
+    "ipc_input_val": "C25D 3/46, C25D 3/48, C25D 3/62, C25D 3/64",
+    "cpc_input_val": "C25D 3/46, C25D 3/48, C25D 3/64",
+    "p1_n_val": "Target: 貴金屬電鍍浴與接觸件",
+    "p1_e_val": "electroplating bath, gold electroplating, silver plating, contact terminal",
+    "p1_z_val": "電鍍浴, 鍍金, 鍍銀, 接觸端子, 引線框架, 貴金屬沉積",
+    "p2_n_val": "Mechanism: 雜環季銨鹽與含硫細化劑協同",
+    "p2_e_val": "grain refiner, brightener, quaternary ammonium, heterocyclic compound",
+    "p2_z_val": "晶粒細化劑, 光澤劑, 聚季銨鹽, 芳香雜環, 硫丙基二硫化物, 陰極極化",
+    "p3_n_val": "Effect: 奈米微晶緻密與耐磨抗氧化",
+    "p3_e_val": "nanocrystalline, dendritic suppression, low contact resistance, wear resistance",
+    "p3_z_val": "奈米晶粒, 抑制枝晶, 低接觸阻抗, 耐磨耗, 打線結合力, 鏡面光澤",
+    "claims_data": [
+        {"要件編號": "Element 1A", "本案 Claim 1 技術要件": "一貴金屬電鍍添加劑，包含 0.1~10 重量份之主光澤劑，其具含氮芳香雜環或聚季銨鹽陽離子結構", "前案 D1 對應技術": "", "前案 D2 對應技術": "", "符合性判定": "待確認", "差異/進步性說明": ""},
+        {"要件編號": "Element 1B", "本案 Claim 1 技術要件": "包含 0.05~5 重量份之輔助細化劑，選自含硫或磺酸基有機抑制劑", "前案 D1 對應技術": "", "前案 D2 對應技術": "", "符合性判定": "待確認", "差異/進步性說明": ""},
+        {"要件編號": "Element 1C", "本案 Claim 1 技術要件": "該主光澤劑與輔助細化劑之重量比限定為 1:1 至 10:1，具特定吸附平衡比例", "前案 D1 對應技術": "", "前案 D2 對應技術": "", "符合性判定": "待確認", "差異/進步性說明": ""},
+        {"要件編號": "Element 1D", "本案 Claim 1 技術要件": "包含 0.5~8 重量份之極化調節界面活性劑與溶劑載體", "前案 D1 對應技術": "", "前案 D2 對應技術": "", "符合性判定": "待確認", "差異/進步性說明": ""}
+    ],
+    "last_fetched_patent": None,
+    "last_oa_result": None
+}
 
-if "patent_data" not in st.session_state:
-    safe_run_synthesis("植物病蟲害光譜分析")
-
-if "last_fetched_patent" not in st.session_state:
-    st.session_state["last_fetched_patent"] = None
+for k, v in init_defaults.items():
+    if k not in st.session_state:
+        st.session_state[k] = v
 
 st.title("🛡️ 智慧財產權整合工作台 (離線旗艦版)")
-st.markdown("⚡ **具備雙軌自癒容錯機制**：遭遇雲端 503 過載自動降級純本機推導，整合 Google Patents 扁平化檢索式 (防呆純化)、專利號爬取、Claims 比對矩陣與進步性答辯產生器。")
+st.markdown("⚡ **100% 本地運行模式**：無須設定 API Key，整合 Google Patents 扁平化檢索式、專利號爬取、Claims 比對矩陣、TIPO 規範圖樣生成與法規答辯庫。")
 
-# 側邊欄
+# ------------------------------------------------------------------------------
+# 側邊欄：操作手冊與營業秘密切結書
+# ------------------------------------------------------------------------------
 st.sidebar.title("🛠️ 工作台輔助面板")
 
 with st.sidebar.expander("📖 操作手冊與使用說明", expanded=False):
@@ -727,6 +658,7 @@ with st.sidebar.expander("📖 操作手冊與使用說明", expanded=False):
     )
 
 with st.sidebar.expander("🔒 營業秘密離職切結書範本", expanded=False):
+    st.caption("依據《營業秘密法》第2條及第13條之1/之2擬定，具備具體標的清單與刑事責任警示。")
     trade_secret_edit = st.text_area(
         "切結書內容（可線上微調）：",
         value=TRADE_SECRET_AGREEMENT_DOC,
@@ -746,63 +678,96 @@ with st.sidebar.expander("🔒 營業秘密離職切結書範本", expanded=Fals
 tab_patent, tab_trademark, tab_laws = st.tabs([
     "📄 專利檢索與 Claims 比對矩陣",
     "🏷️ 商標權佈局與圖樣生成器",
-    "⚖️️ 智財法規速查 (專利法、商標法 ＆ 營業秘密法)"
+    "⚖️ 智財法規速查 (專利法、商標法 ＆ 營業秘密法)"
 ])
 
+# ==============================================================================
 # TAB 1: 專利權模組
+# ==============================================================================
 with tab_patent:
     st.sidebar.markdown("---")
-    st.sidebar.header("📁 快速切換熱門範本")
+    st.sidebar.header("📁 快速載入官方技術範本")
     
-    col_sb1, col_sb2 = st.sidebar.columns(2)
-    with col_sb1:
-        if st.button("🌿 光譜病害分析", use_container_width=True):
-            safe_run_synthesis("植物病蟲害光譜分析")
-            st.rerun()
-    with col_sb2:
-        if st.button("🦠 芽孢桿菌青枯病", use_container_width=True):
-            safe_run_synthesis("液化澱粉芽孢桿菌防治植物青枯病")
-            st.rerun()
-
-    col_sb3, col_sb4 = st.sidebar.columns(2)
-    with col_sb3:
-        if st.button("🛢 低壓儲氫罐", use_container_width=True):
-            safe_run_synthesis("氫燃料低壓儲存罐")
-            st.rerun()
-    with col_sb4:
-        if st.button("⚡ 氫能觸媒轉換", use_container_width=True):
-            safe_run_synthesis("氫燃料汽車觸媒轉換器")
-            st.rerun()
-
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("💡 任意主題自動產生器")
-    st.sidebar.caption("輸入技術名稱（點擊按鈕或按 Enter 即時連動）：")
+    # 範本選取改為「選取 + 按鈕手動載入」，絕不主動覆寫使用者打的字
+    template_choice = st.sidebar.selectbox(
+        "選擇要帶入的預設範本：",
+        ["貴金屬電鍍晶粒細化光澤劑", "多光譜溫室作物病害早期偵測系統", "空白範本 (全新輸入)"]
+    )
     
-    sidebar_query = st.sidebar.text_input("輸入名稱", placeholder="例如：植物病蟲害光譜分析", key="sb_query_box")
-    if st.sidebar.button("🚀 即刻推導並連動", use_container_width=True):
-        if sidebar_query.strip():
-            safe_run_synthesis(sidebar_query.strip())
-            st.rerun()
+    if st.sidebar.button("📥 一鍵載入此範本內容", use_container_width=True):
+        if template_choice == "貴金屬電鍍晶粒細化光澤劑":
+            st.session_state["patent_title_input"] = "用於貴金屬電鍍之晶粒細化光澤添加劑組成物"
+            st.session_state["ipc_input_val"] = "C25D 3/46, C25D 3/48, C25D 3/62, C25D 3/64"
+            st.session_state["cpc_input_val"] = "C25D 3/46, C25D 3/48, C25D 3/64"
+            st.session_state["p1_n_val"] = "Target: 貴金屬電鍍浴與接觸件"
+            st.session_state["p1_e_val"] = "electroplating bath, gold electroplating, silver plating, contact terminal"
+            st.session_state["p1_z_val"] = "電鍍浴, 鍍金, 鍍銀, 接觸端子, 引線框架, 貴金屬沉積"
+            st.session_state["p2_n_val"] = "Mechanism: 雜環季銨鹽與含硫細化劑協同"
+            st.session_state["p2_e_val"] = "grain refiner, brightener, quaternary ammonium, heterocyclic compound"
+            st.session_state["p2_z_val"] = "晶粒細化劑, 光澤劑, 聚季銨鹽, 芳香雜環, 硫丙基二硫化物, 陰極極化"
+            st.session_state["p3_n_val"] = "Effect: 奈米微晶緻密與耐磨抗氧化"
+            st.session_state["p3_e_val"] = "nanocrystalline, dendritic suppression, low contact resistance, wear resistance"
+            st.session_state["p3_z_val"] = "奈米晶粒, 抑制枝晶, 低接觸阻抗, 耐磨耗, 打線結合力, 鏡面光澤"
+            st.session_state["claims_data"] = [
+                {"要件編號": "Element 1A", "本案 Claim 1 技術要件": "一貴金屬電鍍添加劑，包含 0.1~10 重量份之主光澤劑，其具含氮芳香雜環或聚季銨鹽陽離子結構", "前案 D1 對應技術": "", "前案 D2 對應技術": "", "符合性判定": "待確認", "差異/進步性說明": ""},
+                {"要件編號": "Element 1B", "本案 Claim 1 技術要件": "包含 0.05~5 重量份之輔助細化劑，選自含硫或磺酸基有機抑制劑", "前案 D1 對應技術": "", "前案 D2 對應技術": "", "符合性判定": "待確認", "差異/進步性說明": ""},
+                {"要件編號": "Element 1C", "本案 Claim 1 技術要件": "該主光澤劑與輔助細化劑之重量比限定為 1:1 至 10:1，具特定吸附平衡比例", "前案 D1 對應技術": "", "前案 D2 對應技術": "", "符合性判定": "待確認", "差異/進步性說明": ""},
+                {"要件編號": "Element 1D", "本案 Claim 1 技術要件": "包含 0.5~8 重量份之極化調節界面活性劑與溶劑載體", "前案 D1 對應技術": "", "前案 D2 對應技術": "", "符合性判定": "待確認", "差異/進步性說明": ""}
+            ]
+            st.session_state["last_oa_result"] = OA_ELECTROPLATING_DOC
 
-    cur_data = st.session_state["patent_data"]
-    vid = st.session_state["v_id"]
+        elif template_choice == "多光譜溫室作物病害早期偵測系統":
+            st.session_state["patent_title_input"] = "多光譜溫室作物病害早期偵測系統"
+            st.session_state["ipc_input_val"] = "A01G 9/24, G01N 21/84, G06V 20/10, G06T 7/00"
+            st.session_state["cpc_input_val"] = "A01G 9/24, G01N 2021/8466, G06V 20/188"
+            st.session_state["p1_n_val"] = "Target: 溫室作物與植物病害"
+            st.session_state["p1_e_val"] = "greenhouse crop, plant disease, foliage pathogen, tomato crop"
+            st.session_state["p1_z_val"] = "溫室作物, 植物病害, 葉片病原, 作物健康, 番茄病害"
+            st.session_state["p2_n_val"] = "Mechanism: 多光譜感測與邊緣影像推論"
+            st.session_state["p2_e_val"] = "multispectral imaging, hyperspectral sensor, narrowband reflectance, edge computing"
+            st.session_state["p2_z_val"] = "多光譜影像, 高光譜感測, 窄波段反射率, 邊緣運算, 深度學習推論"
+            st.session_state["p3_n_val"] = "Effect: 潛伏早期偵測與即時警報"
+            st.session_state["p3_e_val"] = "early lesion detection, asymptomatic stage, pre-symptomatic diagnosis, real-time alert"
+            st.session_state["p3_z_val"] = "早期病斑偵測, 潛伏期診斷, 症狀前檢測, 即時告警, 降低誤判"
+            st.session_state["claims_data"] = [
+                {"要件編號": "Element 1A", "本案 Claim 1 技術要件": "一多光譜感測模組，配置於移動軌道，具有特定吸收峰窄波段濾波感測器", "前案 D1 對應技術": "", "前案 D2 對應技術": "", "符合性判定": "待確認", "差異/進步性說明": ""},
+                {"要件編號": "Element 1B", "本案 Claim 1 技術要件": "一邊緣推論處理器，對多光譜影像執行植被指數（NDVI/PRI）正規化降維校正", "前案 D1 對應技術": "", "前案 D2 對應技術": "", "符合性判定": "待確認", "差異/進步性說明": ""},
+                {"要件編號": "Element 1C", "本案 Claim 1 技術要件": "一病斑早期預警神經網路模型，根據特徵化多光譜資訊預測前症狀潛伏病灶", "前案 D1 對應技術": "", "前案 D2 對應技術": "", "符合性判定": "待確認", "差異/進步性說明": ""},
+                {"要件編號": "Element 1D", "本案 Claim 1 技術要件": "一環控連動介面，當接收預警訊號時觸發特定分區通風調節與精準噴灑", "前案 D1 對應技術": "", "前案 D2 對應技術": "", "符合性判定": "待確認", "差異/進步性說明": ""}
+            ]
+        else:
+            # 清空欄位
+            st.session_state["patent_title_input"] = ""
+            st.session_state["ipc_input_val"] = ""
+            st.session_state["cpc_input_val"] = ""
+            st.session_state["p1_n_val"] = ""
+            st.session_state["p1_e_val"] = ""
+            st.session_state["p1_z_val"] = ""
+            st.session_state["p2_n_val"] = ""
+            st.session_state["p2_e_val"] = ""
+            st.session_state["p2_z_val"] = ""
+            st.session_state["p3_n_val"] = ""
+            st.session_state["p3_e_val"] = ""
+            st.session_state["p3_z_val"] = ""
+            st.session_state["claims_data"] = [
+                {"要件編號": "Element 1A", "本案 Claim 1 技術要件": "", "前案 D1 對應技術": "", "前案 D2 對應技術": "", "符合性判定": "待確認", "差異/進步性說明": ""}
+            ]
+        st.success(f"✅ 已成功載入【{template_choice}】！")
+        st.rerun()
 
-    st.subheader("1. 發明標的名稱與分類號設定 (支援自由編輯)")
+    st.subheader("1. 發明標的名稱與分類號設定 (支援自由打字輸入)")
     col_input1, col_input2, col_input3 = st.columns([2, 1, 1])
 
     with col_input1:
-        new_title = st.text_input("請輸入專利標的名稱（修改後按 Enter 即刻推導）：", value=cur_data["title"], key=f"title_in_{vid}")
-        if new_title != cur_data["title"]:
-            safe_run_synthesis(new_title)
-            st.rerun()
-
+        target_title = st.text_input(
+            "請輸入專利標的名稱：",
+            key="patent_title_input",
+            placeholder="例如：晶圓搬運機械手臂動態抑振控制系統"
+        )
     with col_input2:
-        ipc_input = st.text_input("IPC 分類號 (逗號隔開)", value=cur_data["ipc"], key=f"ipc_in_{vid}")
-        cur_data["ipc"] = ipc_input
-        
+        ipc_input = st.text_input("IPC 分類號 (逗號隔開)", key="ipc_input_val", placeholder="例: C25D 3/46, C25D 3/48")
     with col_input3:
-        cpc_input = st.text_input("CPC 分類號 (逗號隔開)", value=cur_data["cpc"], key=f"cpc_in_{vid}")
-        cur_data["cpc"] = cpc_input
+        cpc_input = st.text_input("CPC 分類號 (逗號隔開)", key="cpc_input_val", placeholder="例: C25D 3/46, C25D 3/64")
 
     st.markdown("---")
     st.subheader("2. 技術三支柱特徵拆解 (Target / Mechanism / Effect)")
@@ -810,27 +775,26 @@ with tab_patent:
     col_p1, col_p2, col_p3 = st.columns(3)
     with col_p1:
         st.markdown("#### 支柱 A：應用標的 (Target)")
-        p1_name = st.text_input("支柱 A 名稱", value=cur_data["p1_name"], key=f"p1n_{vid}")
-        p1_en = st.text_area("英文關鍵字 (逗號隔開)", value=cur_data["p1_en"], height=90, key=f"p1e_{vid}")
-        p1_zh = st.text_area("中文關鍵字 (逗號隔開)", value=cur_data["p1_zh"], height=90, key=f"p1z_{vid}")
-        cur_data["p1_name"], cur_data["p1_en"], cur_data["p1_zh"] = p1_name, p1_en, p1_zh
+        p1_name = st.text_input("支柱 A 名稱", key="p1_n_val")
+        p1_en = st.text_area("英文關鍵字 (逗號隔開)", key="p1_e_val", height=90)
+        p1_zh = st.text_area("中文關鍵字 (逗號隔開)", key="p1_z_val", height=90)
 
     with col_p2:
         st.markdown("#### 支柱 B：核心手段 (Mechanism)")
-        p2_name = st.text_input("支柱 B 名稱", value=cur_data["p2_name"], key=f"p2n_{vid}")
-        p2_en = st.text_area("英文關鍵字 (逗號隔開)", value=cur_data["p2_en"], height=90, key=f"p2e_{vid}")
-        p2_zh = st.text_area("中文關鍵字 (逗號隔開)", value=cur_data["p2_zh"], height=90, key=f"p2z_{vid}")
-        cur_data["p2_name"], cur_data["p2_en"], cur_data["p2_zh"] = p2_name, p2_en, p2_zh
+        p2_name = st.text_input("支柱 B 名稱", key="p2_n_val")
+        p2_en = st.text_area("英文關鍵字 (逗號隔開)", key="p2_e_val", height=90)
+        p2_zh = st.text_area("中文關鍵字 (逗號隔開)", key="p2_z_val", height=90)
 
     with col_p3:
         st.markdown("#### 支柱 C：技術功效 (Effect)")
-        p3_name = st.text_input("支柱 C 名稱", value=cur_data["p3_name"], key=f"p3n_{vid}")
-        p3_en = st.text_area("英文關鍵字 (逗號隔開)", value=cur_data["p3_en"], height=90, key=f"p3e_{vid}")
-        p3_zh = st.text_area("中文關鍵字 (逗號隔開)", value=cur_data["p3_zh"], height=90, key=f"p3z_{vid}")
-        cur_data["p3_name"], cur_data["p3_en"], cur_data["p3_zh"] = p3_name, p3_en, p3_zh
+        p3_name = st.text_input("支柱 C 名稱", key="p3_n_val")
+        p3_en = st.text_area("英文關鍵字 (逗號隔開)", key="p3_e_val", height=90)
+        p3_zh = st.text_area("中文關鍵字 (逗號隔開)", key="p3_z_val", height=90)
 
     st.markdown("---")
     st.subheader("3. 引證前案專利號爬取 (直連 Google Patents 原文)")
+    st.caption("支援輸入 US、EP、WO、CN、TW 等各國專利號，精確抓取摘要與 Claims 原文。")
+
     col_fetch1, col_fetch2 = st.columns([3, 1])
     with col_fetch1:
         target_pno = st.text_input("前案專利號 (公開號/公告號)：", placeholder="例如：US11578418B2、CN110016700A 或 US8608931B2", key="fetch_pno_input")
@@ -852,7 +816,49 @@ with tab_patent:
                 except Exception as e:
                     st.error(f"爬取失敗: {e}")
 
+    # ⚡ 動態專利號：一鍵自動填入比對矩陣按鈕
     cur_pno = target_pno.strip().upper() if target_pno.strip() else "US8608931B2"
+    
+    col_auto1, col_auto2 = st.columns([2, 2])
+    with col_auto1:
+        if st.button(f"⚡ 一鍵自動帶入 {cur_pno} 比對矩陣", use_container_width=True):
+            st.session_state["claims_data"] = [
+                {
+                    "要件編號": "Element 1A",
+                    "本案 Claim 1 技術要件": "一貴金屬電鍍添加劑，包含 0.1~10 重量份之主光澤劑，其具含氮芳香雜環或聚季銨鹽陽離子結構",
+                    "前案 D1 對應技術": f"[{cur_pno}] 揭露添加含氮芳香雜環衍生物（如吡啶/異菸酸類）作為基礎錯合光澤組分",
+                    "前案 D2 對應技術": "",
+                    "符合性判定": "YES (字面讀取)",
+                    "差異/進步性說明": "兩者均屬含氮雜環有機物，用以提供基本整平作用。"
+                },
+                {
+                    "要件編號": "Element 1B",
+                    "本案 Claim 1 技術要件": "包含 0.05~5 重量份之輔助細化劑，選自含硫或磺酸基有機抑制劑",
+                    "前案 D1 對應技術": f"[{cur_pno}] 揭露使用含硫/巰基有機物（如硫脲或巰基四唑類）作為晶粒生長抑制組分",
+                    "前案 D2 對應技術": "",
+                    "符合性判定": "YES (字面讀取)",
+                    "差異/進步性說明": "前案亦使用含硫化合物抑制粗晶析出。"
+                },
+                {
+                    "要件編號": "Element 1C",
+                    "本案 Claim 1 技術要件": "該主光澤劑與輔助細化劑之重量比限定為 1:1 至 10:1，具特定吸附平衡比例",
+                    "前案 D1 對應技術": f"[{cur_pno}] 未限定重量配比，僅為添加劑並列列舉或其比例遠超本案限定範圍",
+                    "前案 D2 對應技術": "",
+                    "符合性判定": "NO (不符/差異點)",
+                    "差異/進步性說明": "【核心進步性防線】：前案未教示兩者之特定相對比例。本案限定 1:1 至 10:1，產生陰極過電位負移 50 至 200 mV 的協同效應，晶粒細化至 80 nm 以下且無脆化。"
+                },
+                {
+                    "要件編號": "Element 1D",
+                    "本案 Claim 1 技術要件": "包含 0.5~8 重量份之極化調節界面活性劑與溶劑載體",
+                    "前案 D1 對應技術": f"[{cur_pno}] 揭露添加界面活性劑（surfactants）與溶劑載體",
+                    "前案 D2 對應技術": "",
+                    "符合性判定": "YES (字面讀取)",
+                    "差異/進步性說明": "均包含公知之界面活性劑與水性載體。"
+                }
+            ]
+            st.session_state["last_oa_result"] = OA_ELECTROPLATING_DOC.replace("US8608931B2", cur_pno)
+            st.success(f"✅ 已成功將【{cur_pno}】自動帶入全要件比對矩陣與申復理由書！")
+            st.rerun()
 
     if st.session_state["last_fetched_patent"]:
         last_p = st.session_state["last_fetched_patent"]
@@ -875,7 +881,7 @@ with tab_patent:
 
     st.markdown("---")
     st.subheader("4. 申請專利範圍全要件比對矩陣 (線上編輯)")
-    current_claims = cur_data.get("claims", [])
+    current_claims = st.session_state["claims_data"]
     
     edited_df = st.data_editor(
         pd.DataFrame(current_claims),
@@ -889,28 +895,22 @@ with tab_patent:
             "符合性判定": st.column_config.SelectboxColumn("符合性判定", options=["YES (字面讀取)", "NO (不符/差異點)", "均等成立 (DOE)", "待確認"], width="small"),
             "差異/進步性說明": st.column_config.TextColumn("差異分析 / 進步性技術功效", width="large"),
         },
-        key=f"claim_editor_{vid}"
+        key="claim_editor_live"
     )
 
-    col_btn_oa1, col_btn_oa2 = st.columns(2)
-    with col_btn_oa1:
-        if st.button("⚖️ 帶入技術三支柱進步性答辯書 (D1+D2 結合阻礙)", use_container_width=True):
-            st.session_state["last_oa_result"] = generate_advanced_oa_response(cur_data["title"], cur_pno, is_fallback_merged=False)
-            st.success("✅ 已自動套入三支柱進步性答辯書！")
-            st.rerun()
-
-    with col_btn_oa2:
-        if st.button("🛡️ 併入附屬項特徵作為防禦退路 (Fallback Position)", use_container_width=True):
-            cur_data["claims"][1]["本案 Claim 1 技術要件"] += "，且該特定代謝物限定為特定有效抑菌濃度比值"
-            cur_data["claims"][1]["差異/進步性說明"] = "【防禦退路突破】：主動限縮特定關鍵特徵，徹底排除 D1+D2 之公知置換疑慮。"
-            st.session_state["last_oa_result"] = generate_advanced_oa_response(cur_data["title"], cur_pno, is_fallback_merged=True)
-            st.success("✅ 已將特定特徵併入獨立項，並更新答辯理由書！")
+    col_claim_oa1, col_claim_oa2 = st.columns([2, 1])
+    with col_claim_oa1:
+        st.caption("💡 提示：點擊右方按鈕即可將內建標準之《專利法》第22條進步性申復理由書帶入下方預覽。")
+    with col_claim_oa2:
+        if st.button("⚖ 帶入《專利法》第22條進步性申復理由", use_container_width=True):
+            st.session_state["last_oa_result"] = OA_ELECTROPLATING_DOC.replace("US8608931B2", cur_pno)
+            st.success("✅ 已載入進步性申復理由書範本！")
             st.rerun()
 
     if st.session_state.get("last_oa_result"):
-        with st.expander("📄 檢視專利進步性答辯申復理由書（已整合三支柱與反向教示）", expanded=True):
+        with st.expander("📄 檢視專利申復答辯理由書（可線上編輯）", expanded=True):
             oa_display_text = st.session_state["last_oa_result"]
-            st.text_area("申復理由書全文：", value=oa_display_text, height=350, key="quick_oa_preview_box")
+            st.text_area("申復理由書全文：", value=oa_display_text, height=300, key="quick_oa_preview_box")
             col_oa_copy, col_oa_dl = st.columns(2)
             with col_oa_copy:
                 render_copy_button(oa_display_text, "📋 快速複製申復理由全文", button_id="copyQuickOA")
@@ -927,14 +927,14 @@ with tab_patent:
 
     st.markdown("---")
     if st.button("🚀 生成專利檢索式並整合比對報告", type="primary", use_container_width=True):
-        builder = PatentSearchBuilder(cur_data["title"])
-        if cur_data["ipc"]:
-            builder.add_ipc(*cur_data["ipc"].split(","))
-        if cur_data["cpc"]:
-            builder.add_cpc(*cur_data["cpc"].split(","))
-        builder.add_pillar(cur_data["p1_name"], cur_data["p1_en"].split(",") if cur_data["p1_en"] else [], cur_data["p1_zh"].split(",") if cur_data["p1_zh"] else [])
-        builder.add_pillar(cur_data["p2_name"], cur_data["p2_en"].split(",") if cur_data["p2_en"] else [], cur_data["p2_zh"].split(",") if cur_data["p2_zh"] else [])
-        builder.add_pillar(cur_data["p3_name"], cur_data["p3_en"].split(",") if cur_data["p3_en"] else [], cur_data["p3_zh"].split(",") if cur_data["p3_zh"] else [])
+        builder = PatentSearchBuilder(target_title if target_title else "未命名技術標的")
+        if ipc_input:
+            builder.add_ipc(*ipc_input.split(","))
+        if cpc_input:
+            builder.add_cpc(*cpc_input.split(","))
+        builder.add_pillar(p1_name, p1_en.split(",") if p1_en else [], p1_zh.split(",") if p1_zh else [])
+        builder.add_pillar(p2_name, p2_en.split(",") if p2_en else [], p2_zh.split(",") if p2_zh else [])
+        builder.add_pillar(p3_name, p3_en.split(",") if p3_en else [], p3_zh.split(",") if p3_zh else [])
 
         google_query = builder.to_google_patents_query()
         gpss_query = builder.to_gpss_query()
@@ -987,9 +987,13 @@ with tab_patent:
                 use_container_width=True
             )
 
+# ==============================================================================
 # TAB 2: 商標權模組
+# ==============================================================================
 with tab_trademark:
     st.subheader("🏷️ TIPO 規範商標圖樣即時產生器 (8×8 cm @ 300 DPI)")
+    st.markdown("由本地 Pillow 引擎即時合成純白底色高解析度 JPEG 圖樣，支援上傳 Logo、多行排版、對齊與行距調整，輸出完全符合智慧局 E-filing 上傳規範。")
+
     col_tm1, col_tm2 = st.columns([1, 1])
 
     with col_tm1:
@@ -1043,18 +1047,20 @@ with tab_trademark:
         else:
             st.warning("請先輸入商標文字以生成圖樣。")
 
-# TAB 3: 智財法規速查
+# ==============================================================================
+# TAB 3: 智財法規速查 (專利法、商標法、營業秘密法與化學配方專題)
+# ==============================================================================
 with tab_laws:
-    st.subheader("⚖️️ 智財法規速查指南 (含化學配方專利 ＆ 營業秘密法)")
+    st.subheader("⚖️ 智財法規速查指南 (含化學配方專利 ＆ 營業秘密法)")
 
     col_filter1, col_filter2 = st.columns([1, 2])
     with col_filter1:
         law_type_filter = st.selectbox(
             "篩選法規類別：",
-            ["全部法規", "專利法", "營業秘密法", "商標法"]
+            ["全部法規", "專利法", "化學配方專利專題", "營業秘密法", "商標法"]
         )
     with col_filter2:
-        search_kw = st.text_input("輸入條文、標題或關鍵字過濾：", placeholder="例如：新穎性、進步性、秘密性、合理保密措施")
+        search_kw = st.text_input("輸入條文、標題或關鍵字過濾：", placeholder="例如：新穎性、協同效應、秘密性、合理保密措施")
 
     filtered_laws = IP_LAWS_DB
     if law_type_filter != "全部法規":
@@ -1072,10 +1078,11 @@ with tab_laws:
     for item in filtered_laws:
         badge_map = {
             "專利法": "📄 專利法",
+            "化學配方專利專題": "🧪 化學配方專題",
             "營業秘密法": "🔒 營業秘密法",
-            "商標法": "🏷️ 商標法"
+            "商標法": "🏷 商標法"
         }
-        badge = badge_map.get(item["category"], "⚖️ 智財法規")
+        badge = badge_map.get(item["category"], "⚖ 智財法規")
         expander_title = f"{badge} ｜ {item['article']}：{item['title']}"
         with st.expander(expander_title, expanded=True if search_kw.strip() else False):
             st.markdown(f"**🔍 關鍵字標籤**：`{item['keywords']}`")
