@@ -48,7 +48,7 @@ class PatentSearchBuilder:
 
     @staticmethod
     def _clean_text(text: str) -> str:
-        """清洗純文字，徹底剔除分號、換行與多餘引號空白"""
+        """清洗純文字，徹底剔除分號、換行與多餘空白"""
         if not text:
             return ""
         cleaned = re.sub(r'[;\r\n]+', ' ', str(text))
@@ -262,42 +262,78 @@ def fetch_patent_data_from_google(patent_no: str) -> dict:
     }
 
 # ==============================================================================
-# 三、 Gemini AI 自動重試與指數退避輪替
+# 三、 Gemini AI 自動重試與指數退避輪替 (高可用抗 503/429 強化版)
 # ==============================================================================
 CANDIDATE_MODELS = [
-    "gemini-2.5-flash",
-    "gemini-2.5-pro",
-    "gemini-3.6-flash",
-    "gemini-3.8-flash",
-    "gemini-3.5-flash"
+    "gemini-2.5-flash",        # 首選：高吞吐低延遲
+    "gemini-2.0-flash",        # 次選：官方長期穩定版本
+    "gemini-2.5-pro",          # 備援：高階深度推理版本
+    "gemini-1.5-flash",        # 備援：吞吐量最大、負載容忍度高
+    "gemini-1.5-pro"           # 終極備援
 ]
 
+def _extract_json_from_text(raw_text: str):
+    """當模型無法直接輸出純 JSON 時，容錯抽取 Markdown 或文字中的 JSON 區塊"""
+    match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', raw_text)
+    if match:
+        return json.loads(match.group(1))
+    
+    curly_match = re.search(r'(\{[\s\S]*\}|\[[\s\S]*\])', raw_text)
+    if curly_match:
+        return json.loads(curly_match.group(1))
+        
+    return json.loads(raw_text)
+
 def generate_with_fallback(client, prompt: str, as_json: bool = True) -> str:
-    """自動跨多款模型輪替，並加入指數退避機制因應 503/429"""
+    """
+    跨多模型輪替與階梯式退避保護：
+    - 遭遇 503 UNAVAILABLE / 429 限流時，動態拉長等待並快速輪替下一個備援模型
+    - 遭遇 404 NOT_FOUND（版本無效）時，立刻切換至下一版本
+    """
     last_exception = None
-    config_args = {"response_mime_type": "application/json"} if as_json else {}
 
     for model_name in CANDIDATE_MODELS:
-        for attempt in range(3):
+        for attempt in range(2):
             try:
+                config_args = {}
+                if as_json:
+                    config_args["response_mime_type"] = "application/json"
+
                 response = client.models.generate_content(
                     model=model_name,
                     contents=prompt,
                     config=types.GenerateContentConfig(**config_args)
                 )
+
                 if response and response.text:
                     return response.text
+
             except Exception as e:
                 last_exception = e
                 err_str = str(e)
-                if any(code in err_str for code in ["503", "429", "UNAVAILABLE", "RESOURCE_EXHAUSTED"]):
-                    time.sleep(2 * (attempt + 1))
-                    continue
+
                 if "404" in err_str or "NOT_FOUND" in err_str:
                     break
+
+                if any(code in err_str for code in ["503", "429", "UNAVAILABLE", "RESOURCE_EXHAUSTED", "high demand"]):
+                    wait_time = 2.5 * (attempt + 1)
+                    time.sleep(wait_time)
+                    continue
+
+                if as_json and ("response_mime_type" in err_str or "json" in err_str.lower()):
+                    try:
+                        fallback_resp = client.models.generate_content(
+                            model=model_name,
+                            contents=prompt + "\n\n【重要：請務必以純 JSON 格式回傳，不要附加額外說明】"
+                        )
+                        if fallback_resp and fallback_resp.text:
+                            return fallback_resp.text
+                    except Exception:
+                        pass
+                
                 break
 
-    raise last_exception if last_exception else Exception("所有備援模型皆忙碌或無法呼叫，請檢查 API Key 權限或稍後重試。")
+    raise last_exception if last_exception else Exception("所有備援模型皆處於尖峰繁忙狀態，請稍候 30 秒重試，或自側邊欄載入現成範本。")
 
 def analyze_patent_with_gemini(api_key: str, title: str, is_chemical: bool = False) -> dict:
     """專利特徵與 IPC/CPC 拆解（支援一般機械電子與化學配方發明）"""
@@ -346,7 +382,7 @@ def analyze_patent_with_gemini(api_key: str, title: str, is_chemical: bool = Fal
     }}
     """
     res_text = generate_with_fallback(client, prompt, as_json=True)
-    return json.loads(res_text)
+    return _extract_json_from_text(res_text)
 
 def map_prior_art_with_gemini(api_key: str, current_elements: list, prior_art_data: dict, target_col: str) -> list:
     """使用 Gemini 比對引證案內容與本案要件"""
@@ -374,7 +410,7 @@ def map_prior_art_with_gemini(api_key: str, current_elements: list, prior_art_da
     ]
     """
     res_text = generate_with_fallback(client, prompt, as_json=True)
-    return json.loads(res_text)
+    return _extract_json_from_text(res_text)
 
 def analyze_trademark_with_gemini(api_key: str, brand_name: str, product_desc: str) -> dict:
     """商標識別性評估與尼斯分類對應"""
@@ -401,7 +437,7 @@ def analyze_trademark_with_gemini(api_key: str, brand_name: str, product_desc: s
     }}
     """
     res_text = generate_with_fallback(client, prompt, as_json=True)
-    return json.loads(res_text)
+    return _extract_json_from_text(res_text)
 
 def generate_oa_response_with_gemini(api_key: str, law_article: str, target_name: str, rejection_grounds: str, diff_facts: str) -> str:
     """自動撰寫智財局核駁審查意見申復理由書草稿"""
@@ -748,7 +784,7 @@ USER_MANUAL_MARKDOWN = """# 📖 智慧財產權整合工作台 操作手冊
 
 ---
 
-## 模組二：🔐 營業秘密 vs. 專利決策與合規評估
+## 模組二：🔐 營業秘密 vs. 專利策略矩陣
 
 ### 步驟 1：專利 vs. 營業秘密 互動式決策矩陣
 * 輸入 5 項關鍵指標（反向工程難易度、產品市場週期、侵權舉證難度、製程不可逆程度、企業保密管控力），系統自動計算策略量化指數。
@@ -1441,207 +1477,4 @@ with tab_trademark:
             res = st.session_state["tm_analysis"]
             st.markdown("---")
             st.markdown("#### 📋 智財審查可行性分析")
-            st.info(f"**識別性等級判定**：{res.get('distinctiveness_level', '未知')}\n\n**審查風險備註**：{res.get('legal_risk_analysis', '')}")
-
-            st.markdown("#### 📦 推薦指定之尼斯分類與標準項目")
-            for cls in res.get("nice_classes", []):
-                with st.expander(f"📌 {cls.get('class_num')} (類似組群碼: {cls.get('group_codes')})", expanded=True):
-                    st.write(f"**建議指定商品/服務項目**：\n{cls.get('recommended_items')}")
-
-            st.markdown("#### 🔍 TIPO 官方前案檢索建議關鍵字")
-            st.code(res.get("clearance_search_keywords", ""), language="text")
-            st.link_button("🇹🇼 開啟經濟部智慧局商標檢索首頁", "https://twtmsearch.tipo.gov.tw/", use_container_width=True)
-
-    with col_tm2:
-        st.markdown("#### 2. TIPO 電子送件商標圖樣即時產生器")
-        st.caption("官方規格：8×8 公分、300 DPI、945×945 px、純白底色、RGB 模式 JPEG。")
-
-        tm_multiline_text = st.text_area(
-            "圖樣文字內容（支援按下 Enter 自由換行）：",
-            value=tm_brand.strip() if tm_brand.strip() else "極塑\nPolyUltra",
-            height=75
-        )
-
-        uploaded_logo = st.file_uploader("選填：上傳品牌 Logo 圖檔 (支援 PNG、JPG)", type=["png", "jpg", "jpeg"])
-
-        col_ctrl1, col_ctrl2 = st.columns(2)
-        with col_ctrl1:
-            layout_options = ["純文字模式"]
-            if uploaded_logo is not None:
-                layout_options = ["複合商標：上圖下文", "複合商標：左圖右文"] + layout_options
-            layout_choice = st.selectbox("圖樣排版方式：", layout_options)
-
-        with col_ctrl2:
-            align_choice = st.selectbox("文字對齊方式：", ["置中對齊", "靠左對齊", "靠右對齊"])
-
-        col_slider1, col_slider2 = st.columns(2)
-        with col_slider1:
-            font_size_val = st.slider("文字字級大小 (Font Size)：", min_value=28, max_value=120, value=58 if uploaded_logo else 68, step=2)
-        with col_slider2:
-            spacing_ratio_val = st.slider("行距倍率 (Line Spacing)：", min_value=0.1, max_value=1.5, value=0.35, step=0.05)
-
-        if tm_multiline_text.strip():
-            img_bytes = create_tipo_trademark_bytes(
-                text=tm_multiline_text.strip(),
-                layout=layout_choice,
-                font_size=font_size_val,
-                text_align=align_choice,
-                line_spacing_ratio=spacing_ratio_val,
-                logo_file=uploaded_logo
-            )
-            st.image(img_bytes, caption="📸 圖樣預覽 (8x8 cm @ 300 DPI 標準白底)", width=320)
-
-            clean_first_line = re.sub(r'[\r\n\s]+', '_', tm_multiline_text.strip()[:20])
-            clean_filename = f"trademark_{clean_first_line}.jpg"
-            st.download_button(
-                label="📥 下載標準商標圖樣檔 (.jpg)",
-                data=img_bytes,
-                file_name=clean_filename,
-                mime="image/jpeg",
-                type="primary",
-                use_container_width=True
-            )
-        else:
-            st.warning("請先輸入商標文字以生成圖樣。")
-
-# ==============================================================================
-# TAB 4: 智財法規速查 (專利法 / 商標法 / 營業秘密法) ＆ AI 申復答辯
-# ==============================================================================
-with tab_laws:
-    st.subheader("⚖️ 專利法、商標法與營業秘密法 關鍵條文指南")
-    st.markdown("全面收錄台灣**《專利法》**、**《商標法》**與**《營業秘密法》**核心條文、判決要點與官方審查實務指南。")
-
-    col_filter1, col_filter2 = st.columns([1, 2])
-    with col_filter1:
-        law_type_filter = st.selectbox("篩選法規類別：", ["全部法規", "營業秘密法", "專利法", "商標法"])
-    with col_filter2:
-        search_kw = st.text_input("輸入條文、標題或關鍵字快速過濾：", placeholder="例如：合理保密措施、境外使用、進步性、協同增效、混淆誤認")
-
-    filtered_laws = IP_LAWS_DB
-    if law_type_filter != "全部法規":
-        filtered_laws = [item for item in filtered_laws if item["category"] == law_type_filter]
-
-    if search_kw.strip():
-        kw = search_kw.strip().lower()
-        filtered_laws = [
-            item for item in filtered_laws
-            if kw in item["article"].lower() or kw in item["title"].lower() or kw in item["keywords"].lower() or kw in item["text"].lower()
-        ]
-
-    st.caption(f"共找到 {len(filtered_laws)} 則相關核心法規條文：")
-
-    for item in filtered_laws:
-        badge_map = {
-            "專利法": "📄 專利法",
-            "商標法": "🏷️ 商標法",
-            "營業秘密法": "🔐 營業秘密法"
-        }
-        badge = badge_map.get(item["category"], "⚖️ 法規")
-        expander_title = f"{badge} ｜ {item['article']}：{item['title']}"
-        with st.expander(expander_title, expanded=True if search_kw.strip() else False):
-            st.markdown(f"**🔍 關鍵字標籤**：`{item['keywords']}`")
-            st.markdown("##### 📜 法定條文內容：")
-            st.code(item["text"], language="text")
-            st.markdown("##### 💡 審查實務與爭訟抗辯要點：")
-            st.info(item["explanation"])
-
-    st.markdown("---")
-    st.subheader("🤖 AI 智財局審查意見申復理由書產生器 (OA Response Generator)")
-    st.caption("遭遇智慧財產局審查意見通知函（Office Action）核駁時，可依據引證案事實與抗辯要點，一鍵生成代理人規格之申復答辯理由書。")
-
-    oa_template_options = [
-        "化學配方專利：進步性核駁（主張數值範圍臨界性 Criticality 與突變協同增效 Synergism）",
-        "專利法第 22 條第 2 項（一般技術進步性核駁 / 容易思及完成）",
-        "專利法第 26 條第 1/2 項（說明書未充分揭露 / 配方無法據以實現）",
-        "專利法第 22 條第 1 項（新穎性核駁 / 單一前案已揭露）",
-        "商標法第 30 條第 1 項第 10 款（商品非類似/不致混淆抗辯）",
-        "商標法第 29 條第 1 項（缺乏先天識別性 / 說明性用語抗辯）"
-    ]
-    oa_law = st.selectbox("選擇審查意見/爭議所適用的法定條款範本：", oa_template_options)
-
-    if "化學配方專利：進步性核駁" in oa_law:
-        default_oa_target = st.session_state.get("patent_title_input", "半導體先進封裝用低介電高散熱環氧樹脂填料組成物")
-        default_oa_grounds = "審查官認為本案 Claim 1 所請組成物之各成分（雙環戊二烯樹脂、表面修飾奈米矽粉）均屬公知化合物，其所限定之成分重量比為通常知識者之常規試誤調整，欠缺進步性。"
-        default_oa_diffs = (
-            "1. 引證案 D1 僅揭示常規雙酚 A 型樹脂，未教示雙環戊二烯剛性低極性骨架對降低高頻 Df 之技術啟示。\n"
-            "2. 引證案 D2 明確教示：填料重量比若高於 1:2，體系黏度將急遽攀升導致流動性喪失，存在強烈之反向教示（Teaching Away）。\n"
-            "3. 本案特定 1:2.5~1:4.0 配比具有數值臨界性，於高填充下反常性維持低黏度，且 10 GHz 下 Df 突變降至 0.003 以下，產生無法預期之突變協同功效（Synergistic Effect）。"
-        )
-    elif "一般技術進步性核駁" in oa_law:
-        default_oa_target = st.session_state.get("patent_title_input", "智慧感測系統")
-        default_oa_grounds = "審查官認為本案 Claim 1 為通常知識者結合引證案 D1 與 D2 所能輕易置換完成。"
-        default_oa_diffs = "引證案 D1 與 D2 缺乏結合之技術啟示，且本案於感測端邊緣即時補償具有非顯而易見之突出技術特徵。"
-    elif "說明書未充分揭露" in oa_law:
-        default_oa_target = st.session_state.get("patent_title_input", "化學材料組成物")
-        default_oa_grounds = "審查官指稱本案請求項界定之成分範圍過寬，說明書僅有少數實施例，無法使通常知識者據以實現。"
-        default_oa_diffs = "本案說明書已詳盡揭露反應機制與實施例 1~5 及多組比較例，通常知識者本於申請時通常知識無須過度實驗即可輕易實施，且請求項範圍與說明書揭露之技術貢獻完全相稱。"
-    elif "商品非類似" in oa_law:
-        default_oa_target = "商標爭議標的"
-        default_oa_grounds = "相對人主張商標文字近似且商品有配套關係，構成混淆誤認之虞。"
-        default_oa_diffs = "兩造商品性質功能用途互殊、產製主體領域分流無跨界通念，且專業購買者施以較高注意，不致混淆誤認。"
-    else:
-        default_oa_target = "智財爭議標的"
-        default_oa_grounds = "主管機關或對造指控缺乏新穎性或識別性。"
-        default_oa_diffs = "本案在關鍵特徵與使用情境上具備實質區隔。"
-
-    col_oa1, col_oa2 = st.columns(2)
-    with col_oa1:
-        oa_target = st.text_input("本案專利標的 / 商標名稱（可自訂）：", value=default_oa_target)
-        oa_grounds = st.text_area("審查意見通知函（核駁/異議理由）主要指控：", value=default_oa_grounds, height=130)
-
-    with col_oa2:
-        oa_diffs = st.text_area("申請人/答辯人主張之實體論據（數值臨界性 / 協同增效 / 差異事實）：", value=default_oa_diffs, height=195)
-
-    st.write("")
-    gen_oa_btn = st.button("✨ 產生申復答辯理由書草稿", type="primary", use_container_width=True)
-
-    if gen_oa_btn:
-        if not user_api_key.strip():
-            st.error("請先於左側側邊欄輸入有效的 Gemini API Key！")
-        elif not oa_target.strip():
-            st.warning("請填寫標的名稱。")
-        else:
-            with st.spinner("🤖 正在調用 Gemini（智財專利代理人引擎）撰寫申復理由書..."):
-                try:
-                    oa_result = generate_oa_response_with_gemini(
-                        user_api_key.strip(),
-                        oa_law,
-                        oa_target.strip(),
-                        oa_grounds.strip(),
-                        oa_diffs.strip()
-                    )
-                    st.session_state["last_oa_result"] = oa_result
-                    st.success("🎉 申復答辯理由書草稿產生完成！")
-                except Exception as e:
-                    st.error(f"生成失敗: {e}")
-
-    if st.session_state.get("last_oa_result"):
-        oa_doc = st.session_state["last_oa_result"]
-        st.markdown("#### 📄 申復答辯理由書草稿預覽")
-        st.text_area("申復理由書全文內容（可線上直接微調）：", value=oa_doc, height=350, key="oa_general_textarea")
-
-        col_oa_copy, col_oa_dl = st.columns(2)
-        with col_oa_copy:
-            render_copy_button(oa_doc, "📋 一鍵複製申復書全文", button_id="copyOAResponse")
-        with col_oa_dl:
-            oa_time = datetime.now().strftime('%Y%m%d_%H%M%S')
-            st.download_button(
-                "📥 下載申復理由書 (.txt)",
-                data=oa_doc.encode("utf-8"),
-                file_name=f"OA_Response_{oa_time}.txt",
-                mime="text/plain;charset=utf-8",
-                type="secondary",
-                use_container_width=True
-            )
-
-    st.markdown("---")
-    st.markdown("#### 🌐 官方全國法規資料庫即時連結")
-    col_ext1, col_ext2, col_ext3, col_ext4 = st.columns(4)
-    with col_ext1:
-        st.link_button("📜 《專利法》完整法條", "https://law.moj.gov.tw/LawClass/LawAll.aspx?pcode=J0070007", use_container_width=True)
-    with col_ext2:
-        st.link_button("🔐 《營業秘密法》完整法條", "https://law.moj.gov.tw/LawClass/LawAll.aspx?pcode=J0070015", use_container_width=True)
-    with col_ext3:
-        st.link_button("🏷️ 《商標法》完整法條", "https://law.moj.gov.tw/LawClass/LawAll.aspx?pcode=J0070001", use_container_width=True)
-    with col_ext4:
-        st.link_button("🏛 智慧財產局審查基準", "https://www.tipo.gov.tw/", use_container_width=True)
+            st.info(f"**識別性等級判定**：{res.get('distinctiveness_level', '未知')}\n
