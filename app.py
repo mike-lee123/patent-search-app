@@ -384,12 +384,7 @@ def generate_with_fallback(client, prompt: str, as_json: bool = True) -> str:
             if response and response.text:
                 return response.text
 
-        except Exception as e:
-            err_str = str(e)
-            if "404" in err_str or "NOT_FOUND" in err_str:
-                continue
-            if any(code in err_str for code in ["503", "429", "UNAVAILABLE", "RESOURCE_EXHAUSTED", "high demand"]):
-                continue
+        except Exception:
             continue
 
     raise Exception("ALL_API_QUOTA_EXHAUSTED")
@@ -443,7 +438,6 @@ def analyze_patent_with_gemini(api_key: str, title: str, is_chemical: bool = Fal
         res_text = generate_with_fallback(client, prompt, as_json=True)
         return _extract_json_from_text(res_text)
     except Exception:
-        # 當所有 Flash API 遇到 429 限制或網路中斷，無縫啟用本地離線啟發式拆解
         return fallback_offline_patent_analysis(title, is_chemical)
 
 def map_prior_art_with_gemini(api_key: str, current_elements: list, prior_art_data: dict, target_col: str) -> list:
@@ -542,11 +536,6 @@ def generate_oa_response_with_gemini(api_key: str, law_article: str, target_name
         【本案標的名稱/對造商標】：{target_name}
         【核駁或指控理由摘要】：{rejection_grounds}
         【申請人/答辯人主張之實體差異事實與論據】：{diff_facts}
-
-        若涉及化學/配方專利進步性，請務必融入：
-        1. 避免事後諸葛（Hindsight Bias），先前技術未提供將特定組分以特定重量比結合之動機或啟示（No Teaching / Suggestion / Motivation）。
-        2. 強調數值範圍的臨界性（Criticality of Numerical Range）與非顯而易見的突變協同增效（Synergistic Effect）。
-        3. 引證案若有相反教示（Teaching Away）或容易劣化之阻礙，予以強力反駁。
 
         請使用正式專利法律繁體中文撰寫，包含：
         一、案由與前言聲明
@@ -697,7 +686,7 @@ def create_tipo_trademark_bytes(
         start_x = (width_px - total_block_w) // 2
 
         logo_y = (height_px - new_h) // 2
-        canvas.paste(resized_logo, (logo_x, logo_y))
+        canvas.paste(resized_logo, (start_x, logo_y))
 
         text_center_x = start_x + target_logo_w + spacing + (max_line_w // 2)
         text_start_y = (height_px - total_text_h) // 2
@@ -999,7 +988,7 @@ OA_ELECTROPLATING_DOC = """專利申復理由書（草稿）
 """
 
 # ==============================================================================
-# 七、 Streamlit 介面與 Session State 同步管理
+# 七、 Streamlit 介面與 Session State 同步管理 (引入動態 Version Key 保證刷新)
 # ==============================================================================
 st.set_page_config(
     page_title="智慧財產權整合工作台 (專利 ＆ 商標 ＆ 營業秘密)",
@@ -1008,6 +997,7 @@ st.set_page_config(
 )
 
 default_keys = {
+    "sync_version": 1,   # 核心機制：版本累加計數器，用於徹底擊穿 Streamlit 元件內部狀態鎖定
     "patent_title_input": "",
     "ipc_input_val": "",
     "cpc_input_val": "",
@@ -1069,6 +1059,7 @@ selected_template = st.sidebar.selectbox(
 col_tmpl1, col_tmpl2 = st.sidebar.columns(2)
 with col_tmpl1:
     if st.button("📥 載入範本", use_container_width=True):
+        st.session_state["sync_version"] += 1  # 推進版本號
         if selected_template == "半導體封裝低介電環氧樹脂 (化學配方)":
             st.session_state["patent_title_input"] = "半導體先進封裝用低介電高散熱環氧樹脂填料組成物"
             st.session_state["is_chemical_patent"] = True
@@ -1137,6 +1128,7 @@ with col_tmpl1:
 
 with col_tmpl2:
     if st.button("🧹 清空所有", use_container_width=True):
+        st.session_state["sync_version"] += 1  # 推進版本號，強制清空
         st.session_state["patent_title_input"] = ""
         st.session_state["ipc_input_val"] = ""
         st.session_state["cpc_input_val"] = ""
@@ -1179,21 +1171,24 @@ tab_patent, tab_trade_secret, tab_trademark, tab_laws = st.tabs([
 # TAB 1: 專利權模組 (特化化學配方專利)
 # ==============================================================================
 with tab_patent:
+    ver = st.session_state["sync_version"]  # 當前畫面版本標記
+
     st.subheader("1. 發明標的名稱與 AI 自動拆解")
     col_input1, col_input2 = st.columns([3, 1])
 
     with col_input1:
         target_title = st.text_input(
             "請輸入專利標的名稱：",
-            key="patent_title_input",
+            value=st.session_state["patent_title_input"],
+            key=f"patent_title_input_{ver}",
             placeholder="例如：半導體先進封裝用低介電高散熱環氧樹脂填料組成物 或 晶圓搬運機械手臂"
         )
-        is_chem = st.checkbox("🧪 本案為化學/配方/材料組成物發明 (啟動組分配比與協同增效特化拆解)", key="is_chemical_patent")
+        is_chem = st.checkbox("🧪 本案為化學/配方/材料組成物發明 (啟動組分配比與協同增效特化拆解)", value=st.session_state["is_chemical_patent"], key=f"is_chem_{ver}")
 
     with col_input2:
         st.write("")
         st.write("")
-        ai_btn = st.button("✨ Gemini AI 自動拆解", type="secondary", use_container_width=True, key="btn_patent_ai")
+        ai_btn = st.button("✨ Gemini AI 自動拆解", type="secondary", use_container_width=True, key=f"btn_patent_ai_{ver}")
 
     if ai_btn:
         if not user_api_key.strip():
@@ -1202,41 +1197,38 @@ with tab_patent:
             st.warning("請先輸入專利標的名稱。")
         else:
             with st.spinner("🤖 正在拆解技術特徵（若 API 配額受限將自動啟動本地引擎保證完成）..."):
-                try:
-                    ai_res = analyze_patent_with_gemini(user_api_key.strip(), target_title.strip(), is_chemical=is_chem)
+                ai_res = analyze_patent_with_gemini(user_api_key.strip(), target_title.strip(), is_chemical=is_chem)
 
-                    # 分類號同步
-                    st.session_state["ipc_input_val"] = ai_res.get("ipc", "")
-                    st.session_state["cpc_input_val"] = ai_res.get("cpc", "")
+                # 更新內部 Session 狀態，並強行遞增版本號迫使所有元件重繪
+                st.session_state["patent_title_input"] = target_title.strip()
+                st.session_state["is_chemical_patent"] = is_chem
+                st.session_state["ipc_input_val"] = ai_res.get("ipc", "")
+                st.session_state["cpc_input_val"] = ai_res.get("cpc", "")
 
-                    # 支柱 A 多重別名相容提取
-                    st.session_state["p1_n_val"] = ai_res.get("pillar_a_name") or ai_res.get("target_name") or "Target: 應用標的"
-                    st.session_state["p1_e_val"] = ai_res.get("pillar_a_en") or ai_res.get("target_en") or ""
-                    st.session_state["p1_z_val"] = ai_res.get("pillar_a_zh") or ai_res.get("target_zh") or ""
+                st.session_state["p1_n_val"] = ai_res.get("pillar_a_name") or ai_res.get("target_name") or "Target: 應用標的"
+                st.session_state["p1_e_val"] = ai_res.get("pillar_a_en") or ai_res.get("target_en") or ""
+                st.session_state["p1_z_val"] = ai_res.get("pillar_a_zh") or ai_res.get("target_zh") or ""
 
-                    # 支柱 B 多重別名相容提取（徹底修復組分資料不更新問題）
-                    st.session_state["p2_n_val"] = ai_res.get("pillar_b_name") or ai_res.get("components_name") or ai_res.get("mechanism_name") or "Components: 核心組分/手段"
-                    st.session_state["p2_e_val"] = ai_res.get("pillar_b_en") or ai_res.get("components_en") or ai_res.get("mechanism_en") or ""
-                    st.session_state["p2_z_val"] = ai_res.get("pillar_b_zh") or ai_res.get("components_zh") or ai_res.get("mechanism_zh") or ""
+                st.session_state["p2_n_val"] = ai_res.get("pillar_b_name") or ai_res.get("components_name") or ai_res.get("mechanism_name") or "Components: 核心組分/手段"
+                st.session_state["p2_e_val"] = ai_res.get("pillar_b_en") or ai_res.get("components_en") or ai_res.get("mechanism_en") or ""
+                st.session_state["p2_z_val"] = ai_res.get("pillar_b_zh") or ai_res.get("components_zh") or ai_res.get("mechanism_zh") or ""
 
-                    # 支柱 C 多重別名相容提取（徹底修復功效資料不更新問題）
-                    st.session_state["p3_n_val"] = ai_res.get("pillar_c_name") or ai_res.get("property_name") or ai_res.get("effect_name") or "Property: 技術功效/物化特性"
-                    st.session_state["p3_e_val"] = ai_res.get("pillar_c_en") or ai_res.get("property_en") or ai_res.get("effect_en") or ""
-                    st.session_state["p3_z_val"] = ai_res.get("pillar_c_zh") or ai_res.get("property_zh") or ai_res.get("effect_zh") or ""
+                st.session_state["p3_n_val"] = ai_res.get("pillar_c_name") or ai_res.get("property_name") or ai_res.get("effect_name") or "Property: 技術功效/物化特性"
+                st.session_state["p3_e_val"] = ai_res.get("pillar_c_en") or ai_res.get("property_en") or ai_res.get("effect_en") or ""
+                st.session_state["p3_z_val"] = ai_res.get("pillar_c_zh") or ai_res.get("property_zh") or ai_res.get("effect_zh") or ""
 
-                    if ai_res.get("claim_elements"):
-                        st.session_state["claims_data"] = ai_res.get("claim_elements")
+                if ai_res.get("claim_elements"):
+                    st.session_state["claims_data"] = ai_res.get("claim_elements")
 
-                    st.success("🎉 特徵拆解完成！三支柱欄位與 Claims 已同步刷新！")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"拆解過程發生異常: {e}")
+                st.session_state["sync_version"] += 1  # 核心修正：推動版本號，徹底擊穿快取
+                st.success("🎉 特徵拆解完成！三支柱欄位與 Claims 已同步刷新！")
+                st.rerun()
 
     col_class1, col_class2 = st.columns(2)
     with col_class1:
-        ipc_input = st.text_input("IPC 分類號 (逗號隔開)", key="ipc_input_val", placeholder="例: C08L 63/00, C25D 3/46")
+        ipc_input = st.text_input("IPC 分類號 (逗號隔開)", value=st.session_state["ipc_input_val"], key=f"ipc_input_val_{ver}", placeholder="例: C08L 63/00, C25D 3/46")
     with col_class2:
-        cpc_input = st.text_input("CPC 分類號 (逗號隔開)", key="cpc_input_val", placeholder="例: C08L 63/00, C25D 3/64")
+        cpc_input = st.text_input("CPC 分類號 (逗號隔開)", value=st.session_state["cpc_input_val"], key=f"cpc_input_val_{ver}", placeholder="例: C08L 63/00, C25D 3/64")
 
     st.markdown("---")
     st.subheader("2. 技術特徵三支柱展開")
@@ -1244,33 +1236,33 @@ with tab_patent:
     col_p1, col_p2, col_p3 = st.columns(3)
     with col_p1:
         st.markdown("#### 支柱 A：應用標的 / 母材 (Target)")
-        p1_name = st.text_input("支柱 A 名稱", key="p1_n_val")
-        p1_en = st.text_area("英文關鍵字 (逗號隔開)", key="p1_e_val", height=100)
-        p1_zh = st.text_area("中文關鍵字 (逗號隔開)", key="p1_z_val", height=100)
+        p1_name = st.text_input("支柱 A 名稱", value=st.session_state["p1_n_val"], key=f"p1_n_val_{ver}")
+        p1_en = st.text_area("英文關鍵字 (逗號隔開)", value=st.session_state["p1_e_val"], key=f"p1_e_val_{ver}", height=100)
+        p1_zh = st.text_area("中文關鍵字 (逗號隔開)", value=st.session_state["p1_z_val"], key=f"p1_z_val_{ver}", height=100)
 
     with col_p2:
         st.markdown("#### 支柱 B：核心組分 / 手段 (Components)")
-        p2_name = st.text_input("支柱 B 名稱", key="p2_n_val")
-        p2_en = st.text_area("英文關鍵字 (逗號隔開)", key="p2_e_val", height=100)
-        p2_zh = st.text_area("中文關鍵字 (逗號隔開)", key="p2_z_val", height=100)
+        p2_name = st.text_input("支柱 B 名稱", value=st.session_state["p2_n_val"], key=f"p2_n_val_{ver}")
+        p2_en = st.text_area("英文關鍵字 (逗號隔開)", value=st.session_state["p2_e_val"], key=f"p2_e_val_{ver}", height=100)
+        p2_zh = st.text_area("中文關鍵字 (逗號隔開)", value=st.session_state["p2_z_val"], key=f"p2_z_val_{ver}", height=100)
 
     with col_p3:
         st.markdown("#### 支柱 C：技術功效 / 物性 (Property)")
-        p3_name = st.text_input("支柱 C 名稱", key="p3_n_val")
-        p3_en = st.text_area("英文關鍵字 (逗號隔開)", key="p3_e_val", height=100)
-        p3_zh = st.text_area("中文關鍵字 (逗號隔開)", key="p3_z_val", height=100)
+        p3_name = st.text_input("支柱 C 名稱", value=st.session_state["p3_n_val"], key=f"p3_n_val_{ver}")
+        p3_en = st.text_area("英文關鍵字 (逗號隔開)", value=st.session_state["p3_e_val"], key=f"p3_e_val_{ver}", height=100)
+        p3_zh = st.text_area("中文關鍵字 (逗號隔開)", value=st.session_state["p3_z_val"], key=f"p3_z_val_{ver}", height=100)
 
     st.markdown("---")
     st.subheader("3. 引證前案專利號爬取與自動比對 (Auto-fetch Prior Art)")
     col_fetch1, col_fetch2, col_fetch3 = st.columns([2, 1, 1])
     with col_fetch1:
-        target_pno = st.text_input("前案專利號 (公開號/公告號)：", placeholder="例如：US11578418B2 或 US6165342A", key="fetch_pno_input")
+        target_pno = st.text_input("前案專利號 (公開號/公告號)：", placeholder="例如：US11578418B2 或 US6165342A", key=f"fetch_pno_input_{ver}")
     with col_fetch2:
-        target_slot = st.selectbox("填入比對欄位：", ["前案 D1 對應技術", "前案 D2 對應技術"], key="fetch_slot_select")
+        target_slot = st.selectbox("填入比對欄位：", ["前案 D1 對應技術", "前案 D2 對應技術"], key=f"fetch_slot_select_{ver}")
     with col_fetch3:
         st.write("")
         st.write("")
-        fetch_btn = st.button("📥 爬取並自動填入", type="secondary", use_container_width=True)
+        fetch_btn = st.button("📥 爬取並自動填入", type="secondary", use_container_width=True, key=f"btn_fetch_{ver}")
 
     if fetch_btn:
         if not target_pno.strip():
@@ -1302,6 +1294,7 @@ with tab_patent:
                                 row["差異/進步性說明"] = ai_mappings[idx].get("diff_note")
 
                     st.session_state["claims_data"] = curr_claims
+                    st.session_state["sync_version"] += 1  # 推進版本號刷新編輯器
                     st.success(f"✅ 成功擷取專利：【{p_data['patent_no']}】{p_data['title']}，已完成比對！")
                     st.rerun()
 
@@ -1334,14 +1327,14 @@ with tab_patent:
             "符合性判定": st.column_config.SelectboxColumn("符合性判定", options=["YES (字面讀取)", "NO (不符/差異點)", "均等成立 (DOE)", "待確認"], width="small"),
             "差異/進步性說明": st.column_config.TextColumn("差異分析 / 數值臨界性 / 突變協同功效", width="large"),
         },
-        key="claim_editor_live"
+        key=f"claim_editor_live_{ver}"
     )
 
     col_claim_oa1, col_claim_oa2 = st.columns([2, 1])
     with col_claim_oa1:
         st.caption("💡 提示：若表格中有被判定為「NO (不符/差異點)」之配方或特徵，可利用右方按鈕一鍵撰寫《專利法》第22條進步性申復理由。")
     with col_claim_oa2:
-        quick_oa_btn = st.button("⚖️ 一鍵生成《專利法》第22條進步性申復理由", use_container_width=True)
+        quick_oa_btn = st.button("⚖️ 一鍵生成《專利法》第22條進步性申復理由", use_container_width=True, key=f"btn_oa_gen_{ver}")
 
     if quick_oa_btn:
         if not user_api_key.strip():
@@ -1359,23 +1352,21 @@ with tab_patent:
                 diff_summary = "\n".join(diff_rows)
                 rejection_summary = "審查官認為本案 Claim 1 組成物各組分已被先前技術個別教示，所限定之成分重量比為通常知識者之常規試誤調整，欠缺進步性。"
                 
-                try:
-                    quick_oa_res = generate_oa_response_with_gemini(
-                        user_api_key.strip(),
-                        "專利法第 22 條第 2 項（進步性核駁 - 含化學配方數值臨界性與突變增效抗辯）",
-                        target_title if target_title else "本發明專利申請案",
-                        rejection_summary,
-                        diff_summary
-                    )
-                    st.session_state["last_oa_result"] = quick_oa_res
-                    st.success("🎉 進步性申復理由書產生完成！")
-                except Exception as e:
-                    st.error(f"生成失敗: {e}")
+                quick_oa_res = generate_oa_response_with_gemini(
+                    user_api_key.strip(),
+                    "專利法第 22 條第 2 項（進步性核駁 - 含化學配方數值臨界性與突變增效抗辯）",
+                    target_title if target_title else "本發明專利申請案",
+                    rejection_summary,
+                    diff_summary
+                )
+                st.session_state["last_oa_result"] = quick_oa_res
+                st.success("🎉 進步性申復理由書產生完成！")
+                st.rerun()
 
     if st.session_state.get("last_oa_result"):
         with st.expander("📄 檢視最新產出之專利申復答辯理由書", expanded=True):
             oa_display_text = st.session_state["last_oa_result"]
-            st.text_area("申復理由書全文：", value=oa_display_text, height=350, key="quick_oa_preview_box")
+            st.text_area("申復理由書全文：", value=oa_display_text, height=350, key=f"quick_oa_preview_box_{ver}")
             col_oa_copy, col_oa_dl = st.columns(2)
             with col_oa_copy:
                 render_copy_button(oa_display_text, "📋 快速複製申復理由全文", button_id="copyQuickOA")
@@ -1393,9 +1384,9 @@ with tab_patent:
     st.markdown("---")
     col_opt1, col_opt2 = st.columns(2)
     with col_opt1:
-        include_effect = st.checkbox("🔍 Google 檢索式納入技術功效詞（Pillar C）", value=False, help="預設取消勾選以防止過度限縮檢索結果而掛零；若前案過多再勾選此項。")
+        include_effect = st.checkbox("🔍 Google 檢索式納入技術功效詞（Pillar C）", value=False, help="預設取消勾選以防止過度限縮檢索結果而掛零；若前案過多再勾選此項。", key=f"opt_chk_{ver}")
 
-    if st.button("🚀 生成專利檢索式並整合比對報告", type="primary", use_container_width=True):
+    if st.button("🚀 生成專利檢索式並整合比對報告", type="primary", use_container_width=True, key=f"btn_gen_rep_{ver}"):
         builder = PatentSearchBuilder(target_title if target_title else "未命名技術標的")
         if ipc_input:
             builder.add_ipc(ipc_input)
