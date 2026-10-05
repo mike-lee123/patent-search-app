@@ -264,7 +264,6 @@ def fetch_patent_data_from_google(patent_no: str) -> dict:
 # ==============================================================================
 # 三、 Gemini AI 自動重試與離線降級引擎 (徹底杜絕 429/404 崩潰)
 # ==============================================================================
-# 嚴格使用免費層配額最寬鬆的 Flash 正式模型陣列，徹底剔除配額為 0 的 Pro 系列
 CANDIDATE_MODELS = [
     "gemini-2.5-flash",
     "gemini-2.0-flash",
@@ -423,10 +422,10 @@ def analyze_patent_with_gemini(api_key: str, title: str, is_chemical: bool = Fal
             "pillar_a_name": "Target: 標的或材料組成物名稱",
             "pillar_a_en": "英文關鍵字4~6個，逗號隔開",
             "pillar_a_zh": "中文同義詞4~6個，逗號隔開",
-            "pillar_b_name": "Components/Mechanism: 核心手段或組分",
+            "pillar_b_name": "Components: 核心手段或組分",
             "pillar_b_en": "英文關鍵字4~6個，逗號隔開",
             "pillar_b_zh": "中文同義詞4~6個，逗號隔開",
-            "pillar_c_name": "Property/Effect: 技術功效與物性",
+            "pillar_c_name": "Property: 技術功效與物性",
             "pillar_c_en": "英文關鍵字4~6個，逗號隔開",
             "pillar_c_zh": "中文同義詞4~6個，逗號隔開",
             "claim_elements": [
@@ -476,7 +475,6 @@ def map_prior_art_with_gemini(api_key: str, current_elements: list, prior_art_da
         res_text = generate_with_fallback(client, prompt, as_json=True)
         return _extract_json_from_text(res_text)
     except Exception:
-        # 降級備用
         return [
             {
                 "matched_tech": f"[{prior_art_data['patent_no']}] 揭示有對應實施構件",
@@ -699,7 +697,7 @@ def create_tipo_trademark_bytes(
         start_x = (width_px - total_block_w) // 2
 
         logo_y = (height_px - new_h) // 2
-        canvas.paste(resized_logo, (start_x, logo_y))
+        canvas.paste(resized_logo, (logo_x, logo_y))
 
         text_center_x = start_x + target_logo_w + spacing + (max_line_w // 2)
         text_start_y = (height_px - total_text_h) // 2
@@ -1016,10 +1014,10 @@ default_keys = {
     "p1_n_val": "Target: 應用標的",
     "p1_e_val": "",
     "p1_z_val": "",
-    "p2_n_val": "Mechanism/Components: 核心手段/組分",
+    "p2_n_val": "Components: 核心手段/組分",
     "p2_e_val": "",
     "p2_z_val": "",
-    "p3_n_val": "Effect/Property: 技術功效/物化特性",
+    "p3_n_val": "Property: 技術功效/物化特性",
     "p3_e_val": "",
     "p3_z_val": "",
     "is_chemical_patent": False,
@@ -1145,10 +1143,10 @@ with col_tmpl2:
         st.session_state["p1_n_val"] = "Target: 應用標的"
         st.session_state["p1_e_val"] = ""
         st.session_state["p1_z_val"] = ""
-        st.session_state["p2_n_val"] = "Mechanism/Components: 核心手段/組分"
+        st.session_state["p2_n_val"] = "Components: 核心手段/組分"
         st.session_state["p2_e_val"] = ""
         st.session_state["p2_z_val"] = ""
-        st.session_state["p3_n_val"] = "Effect/Property: 技術功效/物化特性"
+        st.session_state["p3_n_val"] = "Property: 技術功效/物化特性"
         st.session_state["p3_e_val"] = ""
         st.session_state["p3_z_val"] = ""
         st.session_state["is_chemical_patent"] = False
@@ -1174,7 +1172,7 @@ tab_patent, tab_trade_secret, tab_trademark, tab_laws = st.tabs([
     "📄 專利檢索與 Claims 比對矩陣 (含化學配方)",
     "🔐 營業秘密 vs. 專利策略矩陣",
     "🏷️ 商標權佈局與圖樣生成器",
-    "⚖️️ 智財法規速查 (專利/商標/營業秘密)"
+    "⚖ 智財法規速查 (專利/商標/營業秘密)"
 ])
 
 # ==============================================================================
@@ -1207,22 +1205,29 @@ with tab_patent:
                 try:
                     ai_res = analyze_patent_with_gemini(user_api_key.strip(), target_title.strip(), is_chemical=is_chem)
 
+                    # 分類號同步
                     st.session_state["ipc_input_val"] = ai_res.get("ipc", "")
                     st.session_state["cpc_input_val"] = ai_res.get("cpc", "")
-                    st.session_state["p1_n_val"] = ai_res.get("pillar_a_name", "Target: 應用標的")
-                    st.session_state["p1_e_val"] = ai_res.get("pillar_a_en", "")
-                    st.session_state["p1_z_val"] = ai_res.get("pillar_a_zh", "")
-                    st.session_state["p2_n_val"] = ai_res.get("pillar_b_name", "Mechanism/Components: 核心手段/組分")
-                    st.session_state["p2_e_val"] = ai_res.get("pillar_b_en", "")
-                    st.session_state["p2_z_val"] = ai_res.get("pillar_b_zh", "")
-                    st.session_state["p3_n_val"] = ai_res.get("pillar_c_name", "Effect/Property: 技術功效/物化特性")
-                    st.session_state["p3_e_val"] = ai_res.get("pillar_c_en", "")
-                    st.session_state["p3_z_val"] = ai_res.get("pillar_c_zh", "")
-                    
+
+                    # 支柱 A 多重別名相容提取
+                    st.session_state["p1_n_val"] = ai_res.get("pillar_a_name") or ai_res.get("target_name") or "Target: 應用標的"
+                    st.session_state["p1_e_val"] = ai_res.get("pillar_a_en") or ai_res.get("target_en") or ""
+                    st.session_state["p1_z_val"] = ai_res.get("pillar_a_zh") or ai_res.get("target_zh") or ""
+
+                    # 支柱 B 多重別名相容提取（徹底修復組分資料不更新問題）
+                    st.session_state["p2_n_val"] = ai_res.get("pillar_b_name") or ai_res.get("components_name") or ai_res.get("mechanism_name") or "Components: 核心組分/手段"
+                    st.session_state["p2_e_val"] = ai_res.get("pillar_b_en") or ai_res.get("components_en") or ai_res.get("mechanism_en") or ""
+                    st.session_state["p2_z_val"] = ai_res.get("pillar_b_zh") or ai_res.get("components_zh") or ai_res.get("mechanism_zh") or ""
+
+                    # 支柱 C 多重別名相容提取（徹底修復功效資料不更新問題）
+                    st.session_state["p3_n_val"] = ai_res.get("pillar_c_name") or ai_res.get("property_name") or ai_res.get("effect_name") or "Property: 技術功效/物化特性"
+                    st.session_state["p3_e_val"] = ai_res.get("pillar_c_en") or ai_res.get("property_en") or ai_res.get("effect_en") or ""
+                    st.session_state["p3_z_val"] = ai_res.get("pillar_c_zh") or ai_res.get("property_zh") or ai_res.get("effect_zh") or ""
+
                     if ai_res.get("claim_elements"):
                         st.session_state["claims_data"] = ai_res.get("claim_elements")
 
-                    st.success("🎉 特徵拆解完成！三支柱欄位與 Claims 已同步填入！")
+                    st.success("🎉 特徵拆解完成！三支柱欄位與 Claims 已同步刷新！")
                     st.rerun()
                 except Exception as e:
                     st.error(f"拆解過程發生異常: {e}")
