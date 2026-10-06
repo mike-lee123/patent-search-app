@@ -553,7 +553,7 @@ def create_tipo_trademark_bytes(
         total_block_w = target_logo_w + spacing + max_line_w
         start_x = (width_px - total_block_w) // 2
         logo_y = (height_px - new_h) // 2
-        canvas.paste(resized_logo, (logo_x, start_y))
+        canvas.paste(resized_logo, (logo_x, logo_y))
         text_center_x = start_x + target_logo_w + spacing + (max_line_w // 2)
         text_start_y = (height_px - total_text_h) // 2
         draw_multiline_block(text_start_y, text_center_x, max_line_w)
@@ -739,7 +739,8 @@ USER_MANUAL_MARKDOWN = """# 📖 智慧財產權整合工作台 操作手冊
 1. **標的拆解**：輸入名稱並點選「✨ Gemini AI 自動拆解」。
 2. **前案比對**：輸入專利號並點擊「📥 爬取並自動填入」。
 3. **表格編輯**：直接於表格內編輯要件與進步性說明。
-4. **法規速查**：Tab 4 提供多維度進階檢索，可按法規體系、實務爭點或關鍵字交叉過濾。
+4. **營業秘密決策**：Tab 2 提供 5 大產業範本按鈕，一鍵帶入反向工程、採證度與生命週期權重。
+5. **法規速查**：Tab 4 提供多維度進階檢索，可按法規體系、實務爭點或關鍵字交叉過濾。
 """
 
 # ==============================================================================
@@ -1218,26 +1219,69 @@ with tab_patent:
             )
 
 # ==============================================================================
-# TAB 2: 營業秘密 vs. 專利策略佈局模組 (含塗料/液態資材情境一鍵套用按鈕)
+# TAB 2: 營業秘密 vs. 專利策略佈局模組 (5 大代表性產業快捷情境按鈕)
 # ==============================================================================
 with tab_trade_secret:
     st.subheader("🔐 營業秘密 vs. 專利策略佈局決策矩陣 (Patent vs. Trade Secret Decision Matrix)")
     st.markdown("透過 5 大維度的量化權重指標評估，系統將自動運算並給出最佳保護策略建議。")
 
+    # 5 大代表性產業快捷情境按鈕區
     st.markdown("##### ⚡ 快速套用產業情境範本：")
-    col_preset1, col_preset2, col_preset_space = st.columns([2, 1.5, 3])
-    with col_preset1:
-        if st.button("🧪 套用情境：化學塗料 / 液態資材 (如溫室隔熱塗料)", use_container_width=True):
-            st.session_state["ts_score_re"] = 1
-            st.session_state["ts_score_detect"] = 5
-            st.session_state["ts_score_lifecycle"] = 4
-            st.session_state["ts_score_process"] = 2
-            st.session_state["ts_score_protection"] = 3
-            st.success("✅ 已套用【化學塗料 / 液態資材情境】評估參數！")
+    col_p1, col_p2, col_p3 = st.columns(3)
+    col_p4, col_p5, col_p6 = st.columns(3)
+
+    with col_p1:
+        if st.button("🧪 化學塗料 / 液態配方", use_container_width=True, help="如溫室隔熱塗料、電鍍添加劑、營養液。特點：易化驗、易採證。"):
+            st.session_state["ts_score_re"] = 1          # 反向工程極易
+            st.session_state["ts_score_detect"] = 5      # 市場侵權極易採證
+            st.session_state["ts_score_lifecycle"] = 4   # 生命週期 5~10 年
+            st.session_state["ts_score_process"] = 2     # 發明點在配方組成物
+            st.session_state["ts_score_protection"] = 3  # 標準化工廠保密能力
+            st.success("✅ 已套用【化學塗料 / 液態配方】評估參數（指數 2.15，建議全面專利排他）！")
             st.rerun()
 
-    with col_preset2:
-        if st.button("🔄 重置為通用預設情境", use_container_width=True):
+    with col_p2:
+        if st.button("⚙️ 半導體 / 封閉精密製程", use_container_width=True, help="如晶圓蝕刻氣體配比、ALD/CVD沉積參數、CMP研磨。特點：廠內黑箱、外部難採證。"):
+            st.session_state["ts_score_re"] = 5          # 反向工程極難 (無法推算內部參數)
+            st.session_state["ts_score_detect"] = 1      # 外部買晶片無法查證侵權
+            st.session_state["ts_score_lifecycle"] = 4   # 製程週期長
+            st.session_state["ts_score_process"] = 5     # 核心完全偏向廠內黑箱製程
+            st.session_state["ts_score_protection"] = 4  # 無塵室嚴密資安管控
+            st.success("✅ 已套用【半導體 / 封閉精密製程】評估參數（指數 4.25，建議營業秘密封存）！")
+            st.rerun()
+
+    with col_p3:
+        if st.button("🤖 AI 演算法 / 雲端 SaaS", use_container_width=True, help="如加權神經網路模型、動態排程演算法、高頻量化模型。特點：雲端黑箱、外部無法調閱原始碼。"):
+            st.session_state["ts_score_re"] = 4          # 伺服器後端運行，逆向極難
+            st.session_state["ts_score_detect"] = 2      # 難以採證對手伺服器原始碼
+            st.session_state["ts_score_lifecycle"] = 2   # 演算法更迭快速 (1~3年)
+            st.session_state["ts_score_process"] = 4     # 偏向後端運算流程
+            st.session_state["ts_score_protection"] = 4  # 雲端權限嚴密分級
+            st.success("✅ 已套用【AI 演算法 / 雲端 SaaS】評估參數（指數 3.50，建議雙軌混合保護）！")
+            st.rerun()
+
+    with col_p4:
+        if st.button("🚲 精密機構 / 消費硬體", use_container_width=True, help="如自行車複材管件榫接、無人機氣動夾爪、3C鉸鏈卡榫。特點：易拆解量測、易採證。"):
+            st.session_state["ts_score_re"] = 1          # 3D掃描或拆解量測極易逆向
+            st.session_state["ts_score_detect"] = 5      # 實體外觀尺寸一目了然，採證極容易
+            st.session_state["ts_score_lifecycle"] = 3   # 消費硬體週期 2~5 年
+            st.session_state["ts_score_process"] = 1     # 核心純為實體構件
+            st.session_state["ts_score_protection"] = 3  # 標準組裝廠管理
+            st.success("✅ 已套用【精密機構 / 消費硬體】評估參數（指數 1.80，建議全面專利排他）！")
+            st.rerun()
+
+    with col_p5:
+        if st.button("💊 生技醫藥 / 發酵萃取", use_container_width=True, help="如工程菌株發酵條件、胜肽純化製程、天然物活性提取。特點：化合物已知但菌種與收率製程保密。"):
+            st.session_state["ts_score_re"] = 3          # 終端成分已知，但菌種與純化難逆向
+            st.session_state["ts_score_detect"] = 3      # 終端成分可測，但菌株來源難證明
+            st.session_state["ts_score_lifecycle"] = 5   # 醫藥認證長達 10~20 年
+            st.session_state["ts_score_process"] = 4     # 核心在生物反應器發酵條件
+            st.session_state["ts_score_protection"] = 3  # 生物安全等級管控
+            st.success("✅ 已套用【生技醫藥 / 發酵萃取】評估參數（指數 3.45，建議雙軌混合保護）！")
+            st.rerun()
+
+    with col_p6:
+        if st.button("🔄 重置為通用預設情境", use_container_width=True, help="還原為系統初始各維度中度數值。"):
             st.session_state["ts_score_re"] = 3
             st.session_state["ts_score_detect"] = 2
             st.session_state["ts_score_lifecycle"] = 4
@@ -1284,6 +1328,7 @@ with tab_trade_secret:
             help="1分：無 NDA、無門禁分流；5分：配方拆解代工、核心機密分段隔離、已落實營業秘密資安稽核。"
         )
 
+    # 多準則加權決策公式 (MCDA)
     ts_weighted_score = (score_re * 0.25) + ((6 - score_detect) * 0.25) + (score_lifecycle * 0.15) + (score_process * 0.20) + (score_protection * 0.15)
 
     st.markdown("---")
@@ -1302,22 +1347,22 @@ with tab_trade_secret:
         if ts_weighted_score >= 3.6:
             st.markdown("""
             **【策略理由與建議行動】**：
-            1. **反向工程門檻極高**，且外部市售品難以直接採證侵權，若公開專利反而是向全世界競爭對手「免費公開技術核心教示」。
+            1. **反向工程門檻極高**，且外部市售品難以直接採證侵權（如半導體製程、封閉黑箱參數），若公開專利反而是向全世界競爭對手「免費公開技術核心教示」。
             2. **建議作為**：立即依《營業秘密法》第 2 條建立**「合理保密措施」**（代號化管理、分段投料、簽署嚴格 NDA）。
             """)
         elif ts_weighted_score >= 2.8:
             st.markdown("""
             **【策略理由與建議行動】**：
-            1. 建議採取**「專利護城河 ＋ 營業秘密黑箱」的混合雙軌策略**。
-            2. **專利保護部分**：針對終端產物之「主要化學組分與寬廣配比範圍」申請專利，以公開排他權阻止對手大舉進犯。
-            3. **營業秘密保護部分**：將「最佳黃金比例（Sweet Spot）、反應催化劑添加溫度、攪拌剪切速率等 Know-how」保留為內部營業秘密。
+            1. 建議採取**「專利護城河 ＋ 營業秘密黑箱」的混合雙軌策略**（如 AI SaaS 架構、生技發酵純化）。
+            2. **專利保護部分**：針對終端產物之「主要化學組分、外層系統架構或用途」申請專利，以公開排他權阻止對手大舉進犯。
+            3. **營業秘密保護部分**：將「最佳黃金比例（Sweet Spot）、私有模型權重、精確研磨剪切速率等 Know-how」保留為內部營業秘密。
             """)
         else:
             st.markdown("""
             **【策略理由與建議行動】**：
-            1. **外部逆向工程容易，且市售品極易化驗比對採證**（如液態塗料、化學肥料、營養液等）。一旦他人購得產品即可透過儀器分析破解；且《營業秘密法》不保護善意第三人之反向工程！
+            1. **外部逆向工程容易，且市售品極易化驗比對採證**（如液態塗料、精密機械夾爪、自行車架等）。一旦他人購得產品即可透過儀器分析或量測破解；且《營業秘密法》第 10 條明定不保護善意第三人之反向工程！
             2. 買得到對手的樣品即可化驗比對，代表**侵權採證門檻極低**，專利排他效益最大化。
-            3. **建議作為**：儘速申請發明專利（組成物請求項），鎖定海關邊境扣押與市場排他；將**研磨分散微工藝與添加順序**留於廠內作為秘密。
+            3. **建議作為**：儘速申請發明/新型專利（組成物/結構請求項），鎖定海關邊境扣押與市場排他；將**研磨分散微工藝與組裝公差**留於廠內作為秘密。
             """)
 
     with st.expander("📐 檢視數學加權計算公式與評估邏輯說明", expanded=False):
@@ -1396,13 +1441,13 @@ with tab_trademark:
             )
 
 # ==============================================================================
-# TAB 4: 智財法規速查 (多維度進階查詢面板升級版)
+# TAB 4: 智財法規速查 (多維度進階查詢面板)
 # ==============================================================================
 with tab_laws:
     st.subheader("⚖️ 專利法、商標法與營業秘密法 關鍵條文指南")
     st.markdown("全面收錄台灣**《專利法》**、**《商標法》**與**《營業秘密法》**核心條文、判決要點與官方審查實務指南。")
 
-    # --- 多維度查詢面板 ---
+    # 多維度查詢面板
     with st.container():
         st.markdown("##### 🔍 多維度法規進階檢索")
         col_f1, col_f2, col_f3 = st.columns([1.2, 1.3, 2])
@@ -1437,14 +1482,12 @@ with tab_laws:
                 key="law_kw_filter"
             )
 
-    # --- 多條件交集過濾邏輯 ---
+    # 多條件交集過濾
     filtered_laws = IP_LAWS_DB
 
-    # 1. 法規類別過濾
     if law_type_filter != "全部法規":
         filtered_laws = [item for item in filtered_laws if item.get("category") == law_type_filter]
 
-    # 2. 爭點標籤過濾
     issue_keyword_map = {
         "合理保密措施 (門禁/NDA/加密)": "合理保密措施",
         "境外使用加重刑責 (第13-2條)": "境外",
@@ -1461,7 +1504,6 @@ with tab_laws:
             if target_token in item.get("keywords", "") or target_token in item.get("explanation", "") or target_token in item.get("text", "")
         ]
 
-    # 3. 關鍵字模糊搜尋
     if search_kw.strip():
         kw = search_kw.strip().lower()
         filtered_laws = [
@@ -1500,8 +1542,4 @@ with tab_laws:
     with col_ext1:
         st.link_button("📜 《全國法規資料庫》", "https://law.moj.gov.tw/", use_container_width=True)
     with col_ext2:
-        st.link_button("⚖️ 《司法院裁判書系統》", "https://judgment.judicial.gov.tw/", use_container_width=True)
-    with col_ext3:
-        st.link_button("🏛 《智慧財產局法規審查基準》", "https://www.tipo.gov.tw/", use_container_width=True)
-    with col_ext4:
-        st.link_button("🏢 《智慧財產及商業法院》", "https://ipc.judicial.gov.tw/", use_container_width=True)
+        st.link_button("⚖️ 《司法院裁判書系統》", "https://judgment.judicial.gov.tw/", use_container_width=
