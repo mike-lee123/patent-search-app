@@ -537,6 +537,11 @@ def generate_oa_response_with_gemini(api_key: str, law_article: str, target_name
         【核駁或指控理由摘要】：{rejection_grounds}
         【申請人/答辯人主張之實體差異事實與論據】：{diff_facts}
 
+        若涉及化學/配方專利進步性，請務必融入：
+        1. 避免事後諸葛（Hindsight Bias），先前技術未提供將特定組分以特定重量比結合之動機或啟示（No Teaching / Suggestion / Motivation）。
+        2. 強調數值範圍的臨界性（Criticality of Numerical Range）與非顯而易見的突變協同增效（Synergistic Effect）。
+        3. 引證案若有相反教示（Teaching Away）或容易劣化之阻礙，予以強力反駁。
+
         請使用正式專利法律繁體中文撰寫，包含：
         一、案由與前言聲明
         二、法規意旨與審查基準法理依據
@@ -686,7 +691,7 @@ def create_tipo_trademark_bytes(
         start_x = (width_px - total_block_w) // 2
 
         logo_y = (height_px - new_h) // 2
-        canvas.paste(resized_logo, (start_x, logo_y))
+        canvas.paste(resized_logo, (logo_x, logo_y))
 
         text_center_x = start_x + target_logo_w + spacing + (max_line_w // 2)
         text_start_y = (height_px - total_text_h) // 2
@@ -1416,11 +1421,11 @@ with tab_patent:
                 st.link_button("🌐 一鍵前往 Google Patents 檢索", f"https://patents.google.com/?q={encoded_query}", type="secondary", use_container_width=True)
 
         with col_res2:
-            st.markdown("#### 🇹🇼 台灣智慧局 GPSS 檢索式")
+            st.markdown("#### 🇹🇼 台灣智慧局專利檢索系統 (TWPAT) 檢索式")
             st.code(gpss_query if gpss_query else "（無有效檢索式）", language="text")
             if gpss_query.strip():
                 render_copy_button(gpss_query, "📋 快速複製 GPSS 檢索式", button_id="copyGPSS")
-                st.link_button("🇹🇼 開啟台灣智慧局 GPSS 系統", "https://gpss.tipo.gov.tw/", type="secondary", use_container_width=True)
+                st.link_button("🇹🇼 開啟台灣智慧局專利檢索系統 (TWPAT)", "https://twpat.tipo.gov.tw/", type="secondary", use_container_width=True)
 
         st.markdown("---")
         st.subheader("💾 匯出專利報告檔")
@@ -1764,7 +1769,7 @@ with tab_laws:
     if st.session_state.get("last_oa_result"):
         oa_doc = st.session_state["last_oa_result"]
         st.markdown("#### 📄 申復答辯理由書草稿預覽")
-        st.text_area("申復理由書全文內容（可線上直接微調）：", value=oa_doc, height=350, key="oa_general_textarea")
+        st.text_area("申復理由書全文內容（可線上直接微調）：", value=oa_doc, height=350, key=f"oa_general_textarea_{ver}")
 
         col_oa_copy, col_oa_dl = st.columns(2)
         with col_oa_copy:
