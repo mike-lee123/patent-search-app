@@ -283,11 +283,9 @@ def generate_with_fallback(client, prompt: str, as_json: bool = True) -> str:
                 err_str = str(e)
                 last_err = err_str
 
-                # 若遇到 404 或型號下線，立即換下一個備援模型
                 if any(k in err_str.lower() for k in ["404", "not_found", "no longer available", "not supported"]):
                     break
 
-                # 若遇到 503 或 429，等待退避重試
                 if any(code in err_str for code in ["503", "429", "UNAVAILABLE", "RESOURCE_EXHAUSTED", "high demand"]):
                     time.sleep(2.0 * (attempt + 1))
                     continue
@@ -634,7 +632,7 @@ USER_MANUAL_MARKDOWN = """# 📖 智慧財產權整合工作台 操作手冊
 """
 
 # ==============================================================================
-# 六、 Streamlit 介面與 Session State 同步管理
+# 六、 Streamlit 介面與 Session State 同步管理 (徹底解耦輸入框與下拉選單)
 # ==============================================================================
 st.set_page_config(
     page_title="智慧財產權整合工作台 (專利 ＆ 商標 ＆ 營業秘密)",
@@ -653,6 +651,7 @@ if "search_history" not in st.session_state:
         "多光譜溫室作物病害早期偵測系統"
     ]
 
+# 初始化元件值
 bindings = {
     "target_title_key": "",
     "ipc_key": "",
@@ -678,6 +677,12 @@ bindings = {
 for k, v in bindings.items():
     if k not in st.session_state:
         st.session_state[k] = v
+
+# 下拉選單主動選取時的回呼函數 (避免與手動打字打架)
+def on_history_selected():
+    selected = st.session_state.get("history_selector_box")
+    if selected and selected != "-- 📜 從已查詢項目快選 --":
+        st.session_state["target_title_key"] = selected
 
 st.title("🛡️ 智慧財產權整合工作台 (專利 ＆ 商標 ＆ 營業秘密)")
 st.markdown("全方位整合 **專利檢索分析 (含化學配方發明)**、**營業秘密決策與合規矩陣**、**Claims 全要件比對**、**TIPO 商標規範圖樣** 與 **AI 答辯書產生器**。")
@@ -800,7 +805,7 @@ with st.sidebar.expander("📖 操作手冊與使用說明", expanded=False):
     st.markdown(USER_MANUAL_MARKDOWN)
 
 # ==============================================================================
-# 正式宣告四大主要 Tab (確保於各 Tab 使用前完成賦值)
+# 正式宣告四大主要 Tab
 # ==============================================================================
 tab_patent, tab_trade_secret, tab_trademark, tab_laws = st.tabs([
     "📄 專利檢索與 Claims 比對矩陣 (含化學配方)",
@@ -816,14 +821,23 @@ with tab_patent:
     st.subheader("1. 發明標的名稱與 AI 自動拆解")
 
     history_opts = ["-- 📜 從已查詢項目快選 --"] + st.session_state["search_history"]
-    sel_hist = st.selectbox("📜 已查詢紀錄快選（點選立即帶入）：", options=history_opts, index=0)
-    if sel_hist != "-- 📜 從已查詢項目快選 --" and sel_hist != st.session_state["target_title_key"]:
-        st.session_state["target_title_key"] = sel_hist
-        st.rerun()
+    # 透過 on_change 觸發，不干擾手動打字！
+    st.selectbox(
+        "📜 已查詢紀錄快選（點選立即帶入）：",
+        options=history_opts,
+        index=0,
+        key="history_selector_box",
+        on_change=on_history_selected
+    )
 
     col_input1, col_input2 = st.columns([3, 1])
     with col_input1:
-        st.text_input("請輸入專利標的名稱：", key="target_title_key", placeholder="例如：高韌性熱塑性碳纖維自行車車架成型技術")
+        # 輸入框直接與 session_state["target_title_key"] 綁定，打字絕對流暢
+        st.text_input(
+            "請輸入專利標的名稱：",
+            key="target_title_key",
+            placeholder="例如：高韌性熱塑性碳纖維自行車車架成型技術"
+        )
         st.checkbox("🧪 本案為化學/配方/材料組成物發明 (啟動組分配比與協同增效特化拆解)", key="is_chem_key")
 
     with col_input2:
@@ -849,7 +863,7 @@ with tab_patent:
                     if curr_title not in st.session_state["search_history"]:
                         st.session_state["search_history"].insert(0, curr_title)
 
-                    # 實時動態數據直接覆寫 Session State
+                    # 寫入 Session State
                     st.session_state["ipc_key"] = ai_res.get("ipc", "")
                     st.session_state["cpc_key"] = ai_res.get("cpc", "")
 
@@ -1126,7 +1140,7 @@ with tab_trade_secret:
 # TAB 3: 商標權模組
 # ==============================================================================
 with tab_trademark:
-    st.subheader("🏷️️ 商標尼斯分類佈局與 TIPO 規範圖樣產生器")
+    st.subheader("🏷️ 商標尼斯分類佈局與 TIPO 規範圖樣產生器")
     col_tm1, col_tm2 = st.columns([1, 1])
 
     with col_tm1:
@@ -1190,7 +1204,7 @@ with tab_trademark:
 # TAB 4: 智財法規速查
 # ==============================================================================
 with tab_laws:
-    st.subheader("⚖️️ 專利法、商標法與營業秘密法 關鍵條文指南")
+    st.subheader("⚖️ 專利法、商標法與營業秘密法 關鍵條文指南")
     for item in IP_LAWS_DB:
         with st.expander(f"⚖️ {item['article']}：{item['title']}"):
             st.code(item["text"], language="text")
