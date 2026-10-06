@@ -553,7 +553,7 @@ def create_tipo_trademark_bytes(
         total_block_w = target_logo_w + spacing + max_line_w
         start_x = (width_px - total_block_w) // 2
         logo_y = (height_px - new_h) // 2
-        canvas.paste(resized_logo, (logo_x, logo_y))
+        canvas.paste(resized_logo, (logo_x, start_y))
         text_center_x = start_x + target_logo_w + spacing + (max_line_w // 2)
         text_start_y = (height_px - total_text_h) // 2
         draw_multiline_block(text_start_y, text_center_x, max_line_w)
@@ -632,7 +632,7 @@ USER_MANUAL_MARKDOWN = """# 📖 智慧財產權整合工作台 操作手冊
 """
 
 # ==============================================================================
-# 六、 Streamlit 介面與 Session State 同步管理 (徹底解耦輸入框與下拉選單)
+# 六、 Streamlit 介面與 Session State 同步管理
 # ==============================================================================
 st.set_page_config(
     page_title="智慧財產權整合工作台 (專利 ＆ 商標 ＆ 營業秘密)",
@@ -645,13 +645,25 @@ if "table_reset_counter" not in st.session_state:
 
 if "search_history" not in st.session_state:
     st.session_state["search_history"] = [
+        "溫室屋頂透明隔熱塗料組成物",
         "高韌性熱塑性碳纖維自行車車架成型技術",
         "半導體先進封裝用低介電高散熱環氧樹脂填料組成物",
         "用於貴金屬電鍍之晶粒細化光澤添加劑組成物",
         "多光譜溫室作物病害早期偵測系統"
     ]
 
-# 初始化元件值
+# 決策矩陣專屬 State 預設值
+ts_state_defaults = {
+    "ts_score_re": 3,
+    "ts_score_detect": 2,
+    "ts_score_lifecycle": 4,
+    "ts_score_process": 4,
+    "ts_score_protection": 3
+}
+for k, v in ts_state_defaults.items():
+    if k not in st.session_state:
+        st.session_state[k] = v
+
 bindings = {
     "target_title_key": "",
     "ipc_key": "",
@@ -678,7 +690,6 @@ for k, v in bindings.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
-# 下拉選單主動選取時的回呼函數 (避免與手動打字打架)
 def on_history_selected():
     selected = st.session_state.get("history_selector_box")
     if selected and selected != "-- 📜 從已查詢項目快選 --":
@@ -821,7 +832,6 @@ with tab_patent:
     st.subheader("1. 發明標的名稱與 AI 自動拆解")
 
     history_opts = ["-- 📜 從已查詢項目快選 --"] + st.session_state["search_history"]
-    # 透過 on_change 觸發，不干擾手動打字！
     st.selectbox(
         "📜 已查詢紀錄快選（點選立即帶入）：",
         options=history_opts,
@@ -832,7 +842,6 @@ with tab_patent:
 
     col_input1, col_input2 = st.columns([3, 1])
     with col_input1:
-        # 輸入框直接與 session_state["target_title_key"] 綁定，打字絕對流暢
         st.text_input(
             "請輸入專利標的名稱：",
             key="target_title_key",
@@ -863,7 +872,6 @@ with tab_patent:
                     if curr_title not in st.session_state["search_history"]:
                         st.session_state["search_history"].insert(0, curr_title)
 
-                    # 寫入 Session State
                     st.session_state["ipc_key"] = ai_res.get("ipc", "")
                     st.session_state["cpc_key"] = ai_res.get("cpc", "")
 
@@ -1099,28 +1107,81 @@ with tab_patent:
             )
 
 # ==============================================================================
-# TAB 2: 營業秘密 vs. 專利策略佈局模組
+# TAB 2: 營業秘密 vs. 專利策略佈局模組 (含塗料/液態資材情境一鍵套用按鈕)
 # ==============================================================================
 with tab_trade_secret:
     st.subheader("🔐 營業秘密 vs. 專利策略佈局決策矩陣 (Patent vs. Trade Secret Decision Matrix)")
+    st.markdown("透過 5 大維度的量化權重指標評估，系統將自動運算並給出最佳保護策略建議。")
+
+    # 新增：快速情境套用按鈕區
+    st.markdown("##### ⚡ 快速套用產業情境範本：")
+    col_preset1, col_preset2, col_preset_space = st.columns([2, 1.5, 3])
+    with col_preset1:
+        if st.button("🧪 套用情境：化學塗料 / 液態資材 (如溫室隔熱塗料)", use_container_width=True):
+            st.session_state["ts_score_re"] = 1          # 極易被化驗逆向
+            st.session_state["ts_score_detect"] = 5      # 市售樣品隨手可得，採證極容易
+            st.session_state["ts_score_lifecycle"] = 4   # 穩定生命週期約 5~10 年
+            st.session_state["ts_score_process"] = 2     # 發明點在配方組成物
+            st.session_state["ts_score_protection"] = 3  # 標準化工廠保密水平
+            st.success("✅ 已套用【化學塗料 / 液態資材情境】評估參數！")
+            st.rerun()
+
+    with col_preset2:
+        if st.button("🔄 重置為通用預設情境", use_container_width=True):
+            st.session_state["ts_score_re"] = 3
+            st.session_state["ts_score_detect"] = 2
+            st.session_state["ts_score_lifecycle"] = 4
+            st.session_state["ts_score_process"] = 4
+            st.session_state["ts_score_protection"] = 3
+            st.info("已重置為通用預設情境。")
+            st.rerun()
+
+    st.markdown("---")
     col_ts_eval1, col_ts_eval2 = st.columns(2)
     with col_ts_eval1:
         st.markdown("#### 1. 技術特性與外部逆向工程難易度")
-        score_re = st.slider("反向工程（Reverse Engineering）難度：", min_value=1, max_value=5, value=3)
-        score_detect = st.slider("市場侵權可偵測性（Detectability of Infringement）：", min_value=1, max_value=5, value=2)
-        score_lifecycle = st.slider("產品/技術市場生命週期（Market Life Cycle）：", min_value=1, max_value=5, value=4)
+        score_re = st.slider(
+            "反向工程（Reverse Engineering）難度：",
+            min_value=1, max_value=5,
+            key="ts_score_re",
+            help="1分：對手買樣品化驗分析 (GC-MS/XRF/FTIR) 即可還原；5分：多重交聯或高溫燒結，逆向工程幾乎不可能。"
+        )
+        score_detect = st.slider(
+            "市場侵權可偵測性（Detectability of Infringement）：",
+            min_value=1, max_value=5,
+            key="ts_score_detect",
+            help="1分：市售成品表面完全看不出來且無法採證；5分：只要買對手市售商品化驗即可直接取得侵權證據。"
+        )
+        score_lifecycle = st.slider(
+            "產品/技術市場生命週期（Market Life Cycle）：",
+            min_value=1, max_value=5,
+            key="ts_score_lifecycle",
+            help="1分：消費電子更迭快 (1~2年)；5分：經典長青配方 (市場價值超20年專利期)。"
+        )
 
     with col_ts_eval2:
         st.markdown("#### 2. 製程特性與企業內部管控力")
-        score_process = st.slider("技術核心偏向製程操作 vs. 終端成品：", min_value=1, max_value=5, value=4)
-        score_protection = st.slider("企業內部合理保密措施完備程度：", min_value=1, max_value=5, value=3)
+        score_process = st.slider(
+            "技術核心偏向製程操作 vs. 終端成品：",
+            min_value=1, max_value=5,
+            key="ts_score_process",
+            help="1分：純為終端產品之成分；5分：高度依賴密閉反應釜溫度/壓力/滴加速度等內部黑箱製程參數。"
+        )
+        score_protection = st.slider(
+            "企業內部合理保密措施完備程度：",
+            min_value=1, max_value=5,
+            key="ts_score_protection",
+            help="1分：無 NDA、無門禁分流；5分：配方拆解代工、核心機密分段隔離、已落實營業秘密資安稽核。"
+        )
 
+    # 多準則加權決策公式 (MCDA)
     ts_weighted_score = (score_re * 0.25) + ((6 - score_detect) * 0.25) + (score_lifecycle * 0.15) + (score_process * 0.20) + (score_protection * 0.15)
 
     st.markdown("---")
+    st.subheader("📊 策略決策矩陣運算結果")
     col_res_ts1, col_res_ts2 = st.columns([1, 2])
     with col_res_ts1:
-        st.metric(label="營業秘密傾向指數", value=f"{ts_weighted_score:.2f} / 5.0")
+        st.metric(label="營業秘密傾向指數 (Trade Secret Index)", value=f"{ts_weighted_score:.2f} / 5.0")
         if ts_weighted_score >= 3.6:
             st.success("🎯 **強烈建議：封存為【營業秘密】保護**")
         elif ts_weighted_score >= 2.8:
@@ -1130,11 +1191,36 @@ with tab_trade_secret:
 
     with col_res_ts2:
         if ts_weighted_score >= 3.6:
-            st.write("反向工程門檻極高且侵權蒐證不易，建議依《營業秘密法》第2條落實門禁、代號與NDA合理保密措施。")
+            st.markdown("""
+            **【策略理由與建議行動】**：
+            1. **反向工程門檻極高**，且外部市售品難以直接採證侵權，若公開專利反而是向全世界競爭對手「免費公開技術核心教示」。
+            2. **建議作為**：立即依《營業秘密法》第 2 條建立**「合理保密措施」**（代號化管理、分段投料、簽署嚴格 NDA）。
+            """)
         elif ts_weighted_score >= 2.8:
-            st.write("終端主要組分與廣泛配比申請專利，製程最佳黃金參數（Know-how）則保留為內部營業秘密。")
+            st.markdown("""
+            **【策略理由與建議行動】**：
+            1. 建議採取**「專利護城河 ＋ 營業秘密黑箱」的混合雙軌策略**。
+            2. **專利保護部分**：針對終端產物之「主要化學組分與寬廣配比範圍」申請專利，以公開排他權阻止對手大舉進犯。
+            3. **營業秘密保護部分**：將「最佳黃金比例（Sweet Spot）、反應催化劑添加溫度、攪拌剪切速率等 Know-how」保留為內部營業秘密。
+            """)
         else:
-            st.write("外部極易逆向解析還原，請立即申請發明專利，建立專利排他權。")
+            st.markdown("""
+            **【策略理由與建議行動】**：
+            1. **外部逆向工程容易，且市售品極易化驗比對採證**（如液態塗料、化學肥料、營養液等）。一旦他人購得產品即可透過儀器分析破解；且《營業秘密法》不保護善意第三人之反向工程！
+            2. 買得到對手的樣品即可化驗比對，代表**侵權採證門檻極低**，專利排他效益最大化。
+            3. **建議作為**：儘速申請發明專利（組成物請求項），鎖定海關邊境扣押與市場排他；將**研磨分散微工藝與添加順序**留於廠內作為秘密。
+            """)
+
+    with st.expander("📐 檢視數學加權計算公式與評估邏輯說明", expanded=False):
+        st.markdown(r"""
+        $$\text{TS Index} = (S_{\text{RE}} \times 0.25) + ((6 - S_{\text{Det}}) \times 0.25) + (S_{\text{LC}} \times 0.15) + (S_{\text{Proc}} \times 0.20) + (S_{\text{Prot}} \times 0.15)$$
+        
+        * **$S_{\text{RE}}$ 反向工程難度（25%）**：得分越高代表越難破解，越偏向營業秘密。
+        * **$(6 - S_{\text{Det}})$ 侵權不可偵測性（25%）**：若市場極易採證 ($S_{\text{Det}}=5$)，轉換後得分僅 $1$，代表應以專利提告維權。
+        * **$S_{\text{Proc}}$ 製程核心偏向（20%）**：越依賴廠內密閉反應參數，越適合營業秘密。
+        * **$S_{\text{LC}}$ 生命週期（15%）** ＆ **$S_{\text{Prot}}$ 保密掌控力（15%）**。
+        * **決策閾值**：$\ge 3.6$ 營業秘密 ｜ $2.8 \sim 3.6$ 專利/秘密混合雙軌 ｜ $< 2.8$ 發明專利。
+        """)
 
 # ==============================================================================
 # TAB 3: 商標權模組
