@@ -244,7 +244,7 @@ def fetch_patent_data_from_google(patent_no: str) -> dict:
     }
 
 # ==============================================================================
-# 三、 Gemini AI 自動重試與離線降級引擎 (穩定 Flash 系列)
+# 三、 Gemini AI 自動重試引擎 (徹底移除死資料，實時針對當前標的拆解)
 # ==============================================================================
 CANDIDATE_MODELS = [
     "gemini-2.5-flash",
@@ -261,90 +261,8 @@ def _extract_json_from_text(raw_text: str):
         return json.loads(curly_match.group(1))
     return json.loads(raw_text)
 
-def fallback_offline_patent_analysis(title: str, is_chemical: bool = False) -> dict:
-    clean_t = re.sub(r'[\s_]+', ' ', title).strip()
-    if is_chemical:
-        return {
-            "ipc": "C08L 63/00, C08K 3/36, C25D 3/46",
-            "cpc": "C08L 63/00, C08K 3/36",
-            "pillar_a_name": f"Target: {clean_t} 基礎基質組成物",
-            "pillar_a_en": "chemical composition, resin matrix, composite formulation, active substrate",
-            "pillar_a_zh": f"{clean_t}, 化學組成物, 樹脂基質, 活性母體, 複合材料",
-            "pillar_b_name": "Components: 關鍵核心組分與反應官能基",
-            "pillar_b_en": "functional monomer, crosslinking agent, coupling refiner, stabilizer",
-            "pillar_b_zh": "核心單體, 官能基改質劑, 交聯劑, 表面偶合劑, 催化穩定助劑",
-            "pillar_c_name": "Property: 臨界物理化學特性與協同增效",
-            "pillar_c_en": "synergistic effect, thermal stability, low dielectric loss, critical ratio",
-            "pillar_c_zh": "相乘協同功效, 耐熱穩定性, 數值臨界平衡, 低損耗, 耐候抗脆化",
-            "claim_elements": [
-                {
-                    "要件編號": "Element 1A",
-                    "本案 Claim 1 技術要件": f"一種組成物，包含 40~85 wt% 之主反應基質，提供主要骨架結構",
-                    "前案 D1 對應技術": "常規基礎單體化合物",
-                    "前案 D2 對應技術": "未特定改質之母體化合物",
-                    "符合性判定": "NO (不符/差異點)",
-                    "差異/進步性說明": "本案特定官能基結構具備更高交聯緻密度與熱力學穩定性。"
-                },
-                {
-                    "要件編號": "Element 1B",
-                    "本案 Claim 1 技術要件": "包含 5~35 wt% 之特徵改質劑或奈米無機分散粉體",
-                    "前案 D1 對應技術": "未經表面修飾之常規添加劑",
-                    "前案 D2 對應技術": "常規助劑",
-                    "符合性判定": "NO (不符/差異點)",
-                    "差異/進步性說明": "透過表面鍵結改質大幅抑制團聚，維持均勻相容性。"
-                },
-                {
-                    "要件編號": "Element 1C",
-                    "本案 Claim 1 技術要件": "該主基質與改質劑之重量比限定於特定臨界數值區間，引發非線性協同增效",
-                    "前案 D1 對應技術": "未教示特定臨界比例，為任意常規試誤",
-                    "前案 D2 對應技術": "反向教示高添加量將導致性質劣變 (Teaching Away)",
-                    "符合性判定": "NO (不符/差異點)",
-                    "差異/進步性說明": "核心發明點：突破先前技術之物理限制，展現無法預期之物化相乘增益。"
-                }
-            ]
-        }
-    else:
-        return {
-            "ipc": "G06F 18/00, H01L 21/67, B25J 9/16",
-            "cpc": "G06F 18/00, H01L 21/67",
-            "pillar_a_name": f"Target: {clean_t} 系統架構",
-            "pillar_a_en": "system architecture, target apparatus, automation platform, sensing device",
-            "pillar_a_zh": f"{clean_t}, 標的系統, 應用裝置, 自動化機構",
-            "pillar_b_name": "Mechanism: 核心控制單元與反饋機構",
-            "pillar_b_en": "control module, feedback mechanism, algorithmic processing, actuator",
-            "pillar_b_zh": "控制模組, 閉迴路反饋, 訊號處理演算法, 驅動致動單元",
-            "pillar_c_name": "Effect: 動態精度提升與誤差抑制",
-            "pillar_c_en": "latency reduction, high precision, dynamic suppression, error compensation",
-            "pillar_c_zh": "延遲降低, 動態補償, 高穩定度, 抑制振顫, 提高產能",
-            "claim_elements": [
-                {
-                    "要件編號": "Element 1A",
-                    "本案 Claim 1 技術要件": "一實體採樣或執行單元，用於擷取原始訊號或定位操作",
-                    "前案 D1 對應技術": "常規感測機構",
-                    "前案 D2 對應技術": "手動或半自動裝置",
-                    "符合性判定": "YES (字面讀取)",
-                    "差異/進步性說明": "基礎硬體構件。"
-                },
-                {
-                    "要件編號": "Element 1B",
-                    "本案 Claim 1 技術要件": "一邊緣訊號校正與動態排程模組，對該訊號執行即時運算",
-                    "前案 D1 對應技術": "集中式離線運算",
-                    "前案 D2 對應技術": "固定式閾值比對",
-                    "符合性判定": "NO (不符/差異點)",
-                    "差異/進步性說明": "本案具備即時邊緣反饋，大幅消弭系統延遲。"
-                },
-                {
-                    "要件編號": "Element 1C",
-                    "本案 Claim 1 技術要件": "一閉迴路連動致動器，依運算結果動態調整輸出參數",
-                    "前案 D1 對應技術": "開迴路定期觸發",
-                    "前案 D2 對應技術": "警報訊息推播",
-                    "符合性判定": "NO (不符/差異點)",
-                    "差異/進步性說明": "具備主動抑制振顫與自我調校之協同功效。"
-                }
-            ]
-        }
-
 def generate_with_fallback(client, prompt: str, as_json: bool = True) -> str:
+    last_err = None
     for model_name in CANDIDATE_MODELS:
         try:
             config_args = {}
@@ -359,166 +277,147 @@ def generate_with_fallback(client, prompt: str, as_json: bool = True) -> str:
 
             if response and response.text:
                 return response.text
-        except Exception:
+        except Exception as e:
+            last_err = e
             continue
 
-    raise Exception("ALL_API_QUOTA_EXHAUSTED")
+    raise Exception(f"所有可用模型皆無法產生回應，最後錯誤：{last_err}")
 
 def analyze_patent_with_gemini(api_key: str, title: str, is_chemical: bool = False) -> dict:
-    try:
-        client = genai.Client(api_key=api_key)
-        chem_instructions = ""
-        if is_chemical:
-            chem_instructions = """
-            【本案為化學/材料/配方/組成物專利】：
-            1. 支柱 A (Target) 需包含目標材料/化學組成物名稱。
-            2. 支柱 B (Components) 需聚焦關鍵核心化學組分、官能基、聚合物架構。
-            3. 支柱 C (Property) 需列出物理/化學物性增益（如 Tg溫度、低介電損耗 Df、協同增效）。
-            4. Claim 1 要件需嚴格區分主基質(A)、特徵改質劑(B)、臨界配比與協同功效(C)。
-            """
-
-        prompt = f"""
-        你是一名專業的專利代理人與資深專利檢索專家。
-        請分析以下發明專利標的名稱，並以繁體中文與專業英文進行技術三支柱拆解、分類號建議與 Claim 1 要件拆解。
-        {chem_instructions}
-
-        發明標的名稱："{title}"
-
-        請嚴格依照以下 JSON 結構回傳：
-        {{
-            "ipc": "建議的 IPC 分類號，用逗號隔開",
-            "cpc": "建議的 CPC 分類號，用逗號隔開",
-            "pillar_a_name": "Target: 標的或材料組成物名稱",
-            "pillar_a_en": "英文關鍵字4~6個，逗號隔開",
-            "pillar_a_zh": "中文同義詞4~6個，逗號隔開",
-            "pillar_b_name": "Components: 核心手段或組分",
-            "pillar_b_en": "英文關鍵字4~6個，逗號隔開",
-            "pillar_b_zh": "中文同義詞4~6個，逗號隔開",
-            "pillar_c_name": "Property: 技術功效與物性",
-            "pillar_c_en": "英文關鍵字4~6個，逗號隔開",
-            "pillar_c_zh": "中文同義詞4~6個，逗號隔開",
-            "claim_elements": [
-                {{
-                    "要件編號": "Element 1A",
-                    "本案 Claim 1 技術要件": "具體構件描繪或核心成分",
-                    "前案 D1 對應技術": "",
-                    "前案 D2 對應技術": "",
-                    "符合性判定": "待確認",
-                    "差異/進步性說明": "預估發明點或突變協同功效說明"
-                }}
-            ]
-        }}
+    """精準針對使用者的標的名稱，動態提煉專屬的支柱與 Claim 1 要件"""
+    client = genai.Client(api_key=api_key)
+    
+    type_instruction = ""
+    if is_chemical:
+        type_instruction = """
+        【本案為化學/配方/材料組成物發明】：
+        - 支柱 A (Target)：本案目標材料/組成物名稱、應用標的。
+        - 支柱 B (Components)：本案關鍵化學成分、核心單體、官能基、添加劑。
+        - 支柱 C (Property)：本案主要物化性能、突變功效、相乘協同增益 (如低損耗、抗剝離)。
+        - Claim 1 要件：請嚴格拆解出該發明專利 Claim 1 的具體要件（如：Element 1A 主反應物、Element 1B 改質劑/填料、Element 1C 特定重量百分比臨界配比、Element 1D 助劑），不得泛泛而談！
         """
-        res_text = generate_with_fallback(client, prompt, as_json=True)
-        return _extract_json_from_text(res_text)
-    except Exception:
-        return fallback_offline_patent_analysis(title, is_chemical)
+    else:
+        type_instruction = """
+        【本案為機械/電子/系統/機構/方法發明】：
+        - 支柱 A (Target)：本案標的裝置、機構或系統名稱。
+        - 支柱 B (Mechanism)：本案特徵核心構件、控制單元、傳動/感測架構或處理步驟。
+        - 支柱 C (Effect)：本案解決之問題與技術功效 (如減重抗震、提高取放精度、降延遲)。
+        - Claim 1 要件：請嚴格將該發明的獨立請求項（Claim 1）拆解成 3~4 個具體技術構件或步驟（如：Element 1A 基座/架構、Element 1B 驅動/處理單元、Element 1C 特徵連動/反饋機構），要具體切合標的名稱！
+        """
 
-def map_prior_art_with_gemini(api_key: str, current_elements: list, prior_art_data: dict, target_col: str) -> list:
-    try:
-        client = genai.Client(api_key=api_key)
-        prompt = f"""
-        你是一名資深專利代理人，正在執行「全要件原則（All-Elements Rule）」專利比對。
-        【本案 Claim 1 現有要件清單】：{json.dumps(current_elements, ensure_ascii=False, indent=2)}
-        【爬取到的引證前案資訊】：
-        專利號：{prior_art_data['patent_no']}
-        發明名稱：{prior_art_data['title']}
-        摘要：{prior_art_data['abstract']}
-        專利範圍：{prior_art_data['claims'][:3000]}
+    prompt = f"""
+    你是一名專業的專利代理人與資深專利審查專家。
+    請嚴格針對下列【發明專利標的名稱】進行深入分析，絕對禁止使用無關的套版資料，必須完全切合該技術領域：
 
-        請針對本案上述每一個要件（Element），提取該前案中是否有相對應之技術構件或組分配比。
-        請嚴格回傳一個 JSON 陣列，長度必須與本案要件清單完全相同，格式如下：
-        [
+    發明標的名稱："{title}"
+    {type_instruction}
+
+    請輸出繁體中文與專業英文，並以純 JSON 格式回傳，欄位規範如下：
+    {{
+        "ipc": "最貼近本發明之 IPC 分類號 2~4 個，用逗號隔開",
+        "cpc": "最貼近本發明之 CPC 分類號 2~4 個，用逗號隔開",
+        "pillar_a_name": "Target: 專屬標的裝置或材料名稱",
+        "pillar_a_en": "英文關鍵字4~6個，逗號隔開",
+        "pillar_a_zh": "中文同義詞4~6個，逗號隔開",
+        "pillar_b_name": "Components/Mechanism: 本技術之核心組分或關鍵構件",
+        "pillar_b_en": "英文關鍵字4~6個，逗號隔開",
+        "pillar_b_zh": "中文同義詞4~6個，逗號隔開",
+        "pillar_c_name": "Property/Effect: 本技術所達成之物理特性或功效",
+        "pillar_c_en": "英文關鍵字4~6個，逗號隔開",
+        "pillar_c_zh": "中文同義詞4~6個，逗號隔開",
+        "claim_elements": [
             {{
-                "matched_tech": "前案在此要件揭露的具體對應構件或成分（若未揭露請寫『未揭露』）",
-                "judgment": "YES (字面讀取) / NO (不符/差異點) / 均等成立 (DOE)",
-                "diff_note": "針對該要件之差異分析或進步性技術功效"
+                "要件編號": "Element 1A",
+                "本案 Claim 1 技術要件": "切合該標的的第一個主要構件或主成分界定",
+                "前案 D1 對應技術": "",
+                "前案 D2 對應技術": "",
+                "符合性判定": "待確認",
+                "差異/進步性說明": "本要件相較於常規技術的特徵差異或功能說明"
+            }},
+            {{
+                "要件編號": "Element 1B",
+                "本案 Claim 1 技術要件": "切合該標的的第二個特徵構件、製程手段或改質添加劑",
+                "前案 D1 對應技術": "",
+                "前案 D2 對應技術": "",
+                "符合性判定": "待確認",
+                "差異/進步性說明": "核心發明特徵說明"
+            }},
+            {{
+                "要件編號": "Element 1C",
+                "本案 Claim 1 技術要件": "切合該標的的特定連動關係、控制邏輯或成分配比",
+                "前案 D1 對應技術": "",
+                "前案 D2 對應技術": "",
+                "符合性判定": "待確認",
+                "差異/進步性說明": "突變功效或非顯而易見性說明"
             }}
         ]
-        """
-        res_text = generate_with_fallback(client, prompt, as_json=True)
-        return _extract_json_from_text(res_text)
-    except Exception:
-        return [
-            {
-                "matched_tech": f"[{prior_art_data['patent_no']}] 揭示有對應實施構件",
-                "judgment": "NO (不符/差異點)",
-                "diff_note": "本案所界定之關鍵參數與特定配置具備實質技術差異。"
-            }
-            for _ in current_elements
-        ]
+    }}
+    """
+    res_text = generate_with_fallback(client, prompt, as_json=True)
+    return _extract_json_from_text(res_text)
+
+def map_prior_art_with_gemini(api_key: str, current_elements: list, prior_art_data: dict, target_col: str) -> list:
+    client = genai.Client(api_key=api_key)
+    prompt = f"""
+    你是一名資深專利代理人，正在執行「全要件原則（All-Elements Rule）」專利比對。
+    【本案 Claim 1 現有要件清單】：{json.dumps(current_elements, ensure_ascii=False, indent=2)}
+    【爬取到的引證前案資訊】：
+    專利號：{prior_art_data['patent_no']}
+    發明名稱：{prior_art_data['title']}
+    摘要：{prior_art_data['abstract']}
+    專利範圍：{prior_art_data['claims'][:3000]}
+
+    請針對本案上述每一個要件（Element），提取該前案中是否有相對應之技術構件或組分配比。
+    請嚴格回傳一個 JSON 陣列，長度必須與本案要件清單完全相同，格式如下：
+    [
+        {{
+            "matched_tech": "前案在此要件揭露的具體對應構件或成分（若未揭露請寫『未揭露』）",
+            "judgment": "YES (字面讀取) / NO (不符/差異點) / 均等成立 (DOE)",
+            "diff_note": "針對該要件之差異分析或進步性技術功效"
+        }}
+    ]
+    """
+    res_text = generate_with_fallback(client, prompt, as_json=True)
+    return _extract_json_from_text(res_text)
 
 def analyze_trademark_with_gemini(api_key: str, brand_name: str, product_desc: str) -> dict:
-    try:
-        client = genai.Client(api_key=api_key)
-        prompt = f"""
-        你是一名專業的商標代理人與智財法務專家。
-        請分析以下商標名稱與其應用之產品/服務：
-        商標名稱："{brand_name}"
-        產品/技術描述："{product_desc}"
+    client = genai.Client(api_key=api_key)
+    prompt = f"""
+    你是一名專業的商標代理人與智財法務專家。
+    請分析以下商標名稱與其應用之產品/服務：
+    商標名稱："{brand_name}"
+    產品/技術描述："{product_desc}"
 
-        請嚴格依照以下 JSON 結構回傳：
-        {{
-            "distinctiveness_level": "獨創性(Fanciful) / 任意性(Arbitrary) / 暗示性(Suggestive) / 說明性(Descriptive)",
-            "legal_risk_analysis": "針對該名稱之核駁風險簡析",
-            "nice_classes": [
-                {{
-                    "class_num": "第 01 類",
-                    "group_codes": "群組碼",
-                    "recommended_items": "建議商品"
-                }}
-            ],
-            "clearance_search_keywords": "檢索建議字"
-        }}
-        """
-        res_text = generate_with_fallback(client, prompt, as_json=True)
-        return _extract_json_from_text(res_text)
-    except Exception:
-        return {
-            "distinctiveness_level": "暗示性(Suggestive)",
-            "legal_risk_analysis": "該商標名稱具備足夠識別性，未直接描述商品之品質或產地，核駁風險低。",
-            "nice_classes": [
-                {
-                    "class_num": "第 01 類",
-                    "group_codes": "0101, 0104",
-                    "recommended_items": "工業用化學品、樹脂複合材料、未加工合成樹脂"
-                }
-            ],
-            "clearance_search_keywords": f"{brand_name}"
-        }
+    請嚴格依照以下 JSON 結構回傳：
+    {{
+        "distinctiveness_level": "獨創性(Fanciful) / 任意性(Arbitrary) / 暗示性(Suggestive) / 說明性(Descriptive)",
+        "legal_risk_analysis": "針對該名稱之核駁風險簡析",
+        "nice_classes": [
+            {{
+                "class_num": "第 01 類 或 第 12 類等",
+                "group_codes": "群組碼",
+                "recommended_items": "建議商品項目"
+            }}
+        ],
+        "clearance_search_keywords": "檢索建議字"
+    }}
+    """
+    res_text = generate_with_fallback(client, prompt, as_json=True)
+    return _extract_json_from_text(res_text)
 
 def generate_oa_response_with_gemini(api_key: str, law_article: str, target_name: str, rejection_grounds: str, diff_facts: str) -> str:
-    try:
-        client = genai.Client(api_key=api_key)
-        prompt = f"""
-        你是一名台灣資深專利代理人與智財律師。
-        請針對下列核駁審查意見，撰寫一份結構嚴謹、條理分明的【申復理由書（草稿）】：
-        【引用法條】：{law_article}
-        【發明名稱】：{target_name}
-        【核駁理由】：{rejection_grounds}
-        【差異論據】：{diff_facts}
-        """
-        return generate_with_fallback(client, prompt, as_json=False)
-    except Exception:
-        return f"""專利申復理由書（草稿 - 本地生成模式）
+    client = genai.Client(api_key=api_key)
+    prompt = f"""
+    你是一名台灣資深專利代理人與智財律師。
+    請依據台灣《經濟部智慧財產局（TIPO）》審查基準，針對下列核駁審查意見，撰寫一份結構嚴謹、條理分明的【申復理由書（草稿）】：
+    【引用法條】：{law_article}
+    【發明名稱】：{target_name}
+    【核駁理由】：{rejection_grounds}
+    【差異論據】：{diff_facts}
 
-案  號：第 [請填入申請案號] 號
-申 請 人：[請填入專利申請人名稱]
-發明名稱：{target_name}
-受 文 者：經濟部智慧財產局
-
-一、 案由與前言聲明
-本案業經 貴局審查官惠示審查意見通知函。申請人經研析後，陳明本案具備突出技術特徵與顯著功效增益，自具可專利性。
-
-二、 審查基準法理依據
-按《專利審查基準》規定，判斷進步性時應避免「事後諸葛（Avoid Hindsight Bias）」。
-
-三、 爭點具體比對與實體答辯理由
-{diff_facts}
-
-四、 結論與懇請事項
-本案請求項確具可專利性，懇請 貴局審查官惠予核准審定。
-"""
+    請包含：一、案由與前言 二、審查基準法理依據（避免事後諸葛） 三、爭點具體比對與實體答辯理由 四、結論與懇請事項。
+    """
+    return generate_with_fallback(client, prompt, as_json=False)
 
 # ==============================================================================
 # 四、 商標圖樣繪製核心邏輯
@@ -634,7 +533,7 @@ def create_tipo_trademark_bytes(
         total_block_w = target_logo_w + spacing + max_line_w
         start_x = (width_px - total_block_w) // 2
         logo_y = (height_px - new_h) // 2
-        canvas.paste(resized_logo, (start_x, logo_y))
+        canvas.paste(resized_logo, (logo_x, logo_y))
         text_center_x = start_x + target_logo_w + spacing + (max_line_w // 2)
         text_start_y = (height_px - total_text_h) // 2
         draw_multiline_block(text_start_y, text_center_x, max_line_w)
@@ -692,28 +591,22 @@ IP_LAWS_DB = [
         "category": "營業秘密法",
         "article": "營業秘密法 第 2 條",
         "title": "營業秘密之法定三要件",
-        "keywords": "營業秘密, 秘密性, 經濟價值, 合理保密措施, 配方, 製程",
+        "keywords": "營業秘密, 秘密性, 經濟價值, 合理保密措施",
         "text": "本法所稱營業秘密，指方法、技術、製程、配方、程式、設計或其他可用於生產、銷售或經營之資訊，而符合下列要件者：\n一、非一般涉及該類資訊之人所知者（秘密性）。\n二、因其秘密性而具有實際或潛在之經濟價值者（經濟價值性）。\n三、所有人已採取合理之保密措施者（合理保密措施）。",
-        "explanation": "化學配方若不公開申請專利，欲以營業秘密法保護，必須「嚴格具備」三要件。尤其是第三款「合理保密措施」，必須建置門禁管制、NDA簽署與加密分級。"
+        "explanation": "營業秘密必須「嚴格具備」三要件，特別是合理保密措施（門禁、NDA、加密）。"
     },
     {
         "category": "專利法",
         "article": "專利法 第 22 條",
         "title": "專利三要件（產業利用性、新穎性、進步性）",
-        "keywords": "新穎性, 進步性, 產業利用性, 協同增效, 數值限定",
+        "keywords": "新穎性, 進步性, 產業利用性, 協同增效",
         "text": "可供產業上利用之發明，無下列情事之一，得依本法申請專利：\n一、申請前已見於刊物者。\n二、申請前已公開實施者。\n三、申請前已為公眾所知悉者。\n發明雖無前項各款所列情事，但為其所屬技術領域中具有通常知識者依申請前之先前技術所能輕易完成時，仍不得依本法申請專利。",
-        "explanation": "配方專利成分組合若產生超出預期之「突變協同功效（Synergistic Effect）」，或特定數值區間內物性產生不可預期躍升，即具備法定進步性。"
+        "explanation": "技術特徵若產生超出預期之功效，即具備法定進步性。"
     }
 ]
 
-USER_MANUAL_MARKDOWN = """# 📖 智慧財產權整合工作台 操作手冊
-1. **標的拆解**：輸入名稱並點選「✨ Gemini AI 自動拆解」。
-2. **前案比對**：輸入專利號並點擊「📥 爬取並自動填入」。
-3. **表格編輯**：直接於表格內編輯要件與進步性說明。
-"""
-
 # ==============================================================================
-# 六、 Streamlit 介面與 Session State 同步管理 (使用標準單一 Key 繫結)
+# 六、 Streamlit 介面與 Session State 同步管理 (動態直接刷新，絕不鎖定)
 # ==============================================================================
 st.set_page_config(
     page_title="智慧財產權整合工作台 (專利 ＆ 商標 ＆ 營業秘密)",
@@ -721,19 +614,17 @@ st.set_page_config(
     layout="wide"
 )
 
-# 宣告並初始化 State
 if "table_reset_counter" not in st.session_state:
     st.session_state["table_reset_counter"] = 0
 
 if "search_history" not in st.session_state:
     st.session_state["search_history"] = [
+        "高韌性熱塑性碳纖維自行車車架成型技術",
         "半導體先進封裝用低介電高散熱環氧樹脂填料組成物",
         "用於貴金屬電鍍之晶粒細化光澤添加劑組成物",
-        "多光譜溫室作物病害早期偵測系統",
-        "高韌性熱塑性碳纖維自行車車架成型技術"
+        "多光譜溫室作物病害早期偵測系統"
     ]
 
-# 核心綁定欄位的預設值
 bindings = {
     "target_title_key": "",
     "ipc_key": "",
@@ -741,7 +632,7 @@ bindings = {
     "p1_n_key": "Target: 應用標的",
     "p1_e_key": "",
     "p1_z_key": "",
-    "p2_n_key": "Components: 核心組分/手段",
+    "p2_n_key": "Components: 核心手段/組分",
     "p2_e_key": "",
     "p2_z_key": "",
     "p3_n_key": "Property: 技術功效/物化特性",
@@ -786,9 +677,9 @@ st.sidebar.header("📁 快速載入技術範本")
 selected_template = st.sidebar.selectbox(
     "選擇要載入的範本：",
     [
+        "高韌性碳纖維自行車車架 (複材成型)",
         "半導體封裝低介電環氧樹脂 (化學配方)",
-        "貴金屬電鍍晶粒細化光澤劑 (化學配方)",
-        "多光譜溫室作物病害早期偵測系統"
+        "貴金屬電鍍晶粒細化光澤劑 (化學配方)"
     ]
 )
 
@@ -796,7 +687,26 @@ col_tmpl1, col_tmpl2 = st.sidebar.columns(2)
 with col_tmpl1:
     if st.button("📥 載入範本", use_container_width=True):
         st.session_state["table_reset_counter"] += 1
-        if selected_template == "半導體封裝低介電環氧樹脂 (化學配方)":
+        if selected_template == "高韌性碳纖維自行車車架 (複材成型)":
+            st.session_state["target_title_key"] = "高韌性熱塑性碳纖維自行車車架成型技術"
+            st.session_state["is_chem_key"] = False
+            st.session_state["ipc_key"] = "B62K 3/02, B29C 70/46, B29K 105/08"
+            st.session_state["cpc_key"] = "B62K 3/02, B29C 70/46, B29K 2307/04"
+            st.session_state["p1_n_key"] = "Target: 熱塑性碳纖維車架管件"
+            st.session_state["p1_e_key"] = "thermoplastic carbon fiber frame, bicycle frame, tubular chassis"
+            st.session_state["p1_z_key"] = "熱塑性碳纖維車架, 自行車車架, 管件車架, 複合材料自行車"
+            st.session_state["p2_n_key"] = "Mechanism: 內充氣袋輔助預浸布連續模壓成型"
+            st.session_state["p2_e_key"] = "bladder molding, continuous prepreg, polyetherketone, compression molding"
+            st.session_state["p2_z_key"] = "氣囊成型, 連續碳纖維預浸布, 聚醚醚酮熱塑基質, 高壓熱壓成型"
+            st.session_state["p3_n_key"] = "Effect: 高耐衝擊衝擊韌性與快速回收再生"
+            st.session_state["p3_e_key"] = "high impact toughness, fatigue resistance, recyclability, void reduction"
+            st.session_state["p3_z_key"] = "高衝擊韌性, 抗疲勞斷裂, 可回收熱塑成型, 消除層間氣孔"
+            st.session_state["claims_data"] = [
+                {"要件編號": "Element 1A", "本案 Claim 1 技術要件": "一種自行車車架主體，包含複數個一體成型之連續纖維強化熱塑性複合材料中空管件", "前案 D1 對應技術": "熱固性環氧樹脂碳纖維車架", "前案 D2 對應技術": "金屬鋁合金管件焊接", "符合性判定": "NO (不符/差異點)", "差異/進步性說明": "本案採用連續纖維熱塑基質，具備極高耐落石衝擊抗崩裂性能。"},
+                {"要件編號": "Element 1B", "本案 Claim 1 技術要件": "各管件接合處具有預置之熱熔膠結嵌件，經感應熱熔對接形成無縫榫接節點", "前案 D1 對應技術": "傳統碳纖布手糊包覆膠黏", "前案 D2 對應技術": "螺栓固定鎖附", "符合性判定": "NO (不符/差異點)", "差異/進步性說明": "熱熔對接節點無膠水應力集中老化之缺陷。"},
+                {"要件編號": "Element 1C", "本案 Claim 1 技術要件": "管壁層間孔隙率小於 0.8%，且吸能韌性較同重量熱固性碳纖構件高出 40% 以上", "前案 D1 對應技術": "孔隙率約 2~3%", "前案 D2 對應技術": "金屬構件無層間孔隙特性", "符合性判定": "NO (不符/差異點)", "差異/進步性說明": "顯著提升衝擊韌性與結構安全性。"}
+            ]
+        elif selected_template == "半導體封裝低介電環氧樹脂 (化學配方)":
             st.session_state["target_title_key"] = "半導體先進封裝用低介電高散熱環氧樹脂填料組成物"
             st.session_state["is_chem_key"] = True
             st.session_state["ipc_key"] = "C08L 63/00, C08K 3/36, C08G 59/20, H01L 23/29"
@@ -811,11 +721,10 @@ with col_tmpl1:
             st.session_state["p3_e_key"] = "low dielectric dissipation Df, low CTE, thermal conductivity"
             st.session_state["p3_z_key"] = "低介電損耗 Df, 低熱膨脹係數 CTE, 高導熱率, 抑制晶圓翹曲"
             st.session_state["claims_data"] = [
-                {"要件編號": "Element 1A", "本案 Claim 1 技術要件": "一種低介電高散熱環氧樹脂組成物，包含 100 重量份之主樹脂基質，其中包含至少 40 wt% 之雙環戊二烯型（DCPD）環氧寡聚物", "前案 D1 對應技術": "常規雙酚 A 型環氧樹脂", "前案 D2 對應技術": "環脂族液態環氧樹脂", "符合性判定": "NO (不符/差異點)", "差異/進步性說明": "本案採用 DCPD 剛性脂環骨架，降低高頻微波下之偶極極化，降低 Df 至 0.003 以下。"},
-                {"要件編號": "Element 1B", "本案 Claim 1 技術要件": "包含 250 至 400 重量份之表面改質球形二氧化矽奈米粉體，以含苯基之三甲氧基矽烷預處理", "前案 D1 對應技術": "未經修飾之角狀石英粉", "前案 D2 對應技術": "常規胺基矽烷修飾球矽", "符合性判定": "NO (不符/差異點)", "差異/進步性說明": "苯基矽烷修飾抑制奈米團聚，於極高填充量下維持流動度與抗空洞特性。"},
-                {"要件編號": "Element 1C", "本案 Claim 1 技術要件": "該主樹脂基質與修飾奈米二氧化矽之特定重量比為 1:2.5 至 1:4.0，於 10 GHz 下介電損耗 Df 小於 0.003", "前案 D1 對應技術": "重量比未限定", "前案 D2 對應技術": "教示填料高於 1:2 時黏度急遽飆升失去加工性", "符合性判定": "NO (不符/差異點)", "差異/進步性說明": "核心臨界配比：突破引證案 D2 之黏度障礙，在 1:2.5~1:4.0 下兼具高導熱與超低 Df 協同增效。"}
+                {"要件編號": "Element 1A", "本案 Claim 1 技術要件": "包含 100 重量份之主樹脂基質，其中包含至少 40 wt% 之雙環戊二烯型環氧寡聚物", "前案 D1 對應技術": "常規雙酚 A 型環氧樹脂", "前案 D2 對應技術": "環脂族液態環氧樹脂", "符合性判定": "NO (不符/差異點)", "差異/進步性說明": "DCPD 剛性脂環骨架大幅降低偶極極化，降低 Df 至 0.003 以下。"},
+                {"要件編號": "Element 1B", "本案 Claim 1 技術要件": "包含 250 至 400 重量份之表面改質球形二氧化矽奈米粉體", "前案 D1 對應技術": "未經修飾之角狀石英粉", "前案 D2 對應技術": "常規胺基矽烷修飾球矽", "符合性判定": "NO (不符/差異點)", "差異/進步性說明": "表面修飾抑制團聚，高填充下維持流動度。"}
             ]
-        elif selected_template == "貴金屬電鍍晶粒細化光澤劑 (化學配方)":
+        else:
             st.session_state["target_title_key"] = "用於貴金屬電鍍之晶粒細化光澤添加劑組成物"
             st.session_state["is_chem_key"] = True
             st.session_state["ipc_key"] = "C25D 3/46, C25D 3/48, C25D 3/62"
@@ -830,27 +739,9 @@ with col_tmpl1:
             st.session_state["p3_e_key"] = "nanocrystalline, dendritic suppression, wear resistance"
             st.session_state["p3_z_key"] = "奈米晶粒, 抑制枝晶, 低接觸阻抗, 耐磨耗"
             st.session_state["claims_data"] = [
-                {"要件編號": "Element 1A", "本案 Claim 1 技術要件": "一貴金屬電鍍添加劑，包含 0.1~10 重量份之主光澤劑，具含氮芳香雜環或聚季銨鹽結構", "前案 D1 對應技術": "常規吡啶衍生物單一有機光澤劑", "前案 D2 對應技術": "硫脲類晶粒抑制劑", "符合性判定": "NO (不符/差異點)", "差異/進步性說明": "聚季銨鹽結構具強陰極極化能力，不易高溫裂解。"},
-                {"要件編號": "Element 1B", "本案 Claim 1 技術要件": "主光澤劑與輔助細化劑之重量比限定為 1:1 至 10:1", "前案 D1 對應技術": "未限定特定重量配比", "前案 D2 對應技術": "比例為 1:20 之微量添加體系", "符合性判定": "NO (不符/差異點)", "差異/進步性說明": "特定 1:1~10:1 配比產生過電位負移 50~200 mV 協同增效，晶粒細化至 80 nm。"}
+                {"要件編號": "Element 1A", "本案 Claim 1 技術要件": "包含 0.1~10 重量份之主光澤劑，具含氮芳香雜環或聚季銨鹽結構", "前案 D1 對應技術": "常規吡啶衍生物單一有機光澤劑", "前案 D2 對應技術": "硫脲類晶粒抑制劑", "符合性判定": "NO (不符/差異點)", "差異/進步性說明": "聚季銨鹽結構具強陰極極化能力。"}
             ]
-        else:
-            st.session_state["target_title_key"] = "多光譜溫室作物病害早期偵測系統"
-            st.session_state["is_chem_key"] = False
-            st.session_state["ipc_key"] = "A01G 9/24, G01N 21/84, G06V 20/10"
-            st.session_state["cpc_key"] = "A01G 9/24, G01N 2021/8466"
-            st.session_state["p1_n_key"] = "Target: 溫室作物與植物病害"
-            st.session_state["p1_e_key"] = "greenhouse crop, plant disease, foliage pathogen"
-            st.session_state["p1_z_key"] = "溫室作物, 植物病害, 葉片病原, 番茄病害"
-            st.session_state["p2_n_key"] = "Mechanism: 多光譜感測與邊緣影像推論"
-            st.session_state["p2_e_key"] = "multispectral imaging, hyperspectral sensor, edge computing"
-            st.session_state["p2_z_key"] = "多光譜影像, 高光譜感測, 邊緣運算, 深度學習推論"
-            st.session_state["p3_n_key"] = "Effect: 潛伏早期偵測與即時警報"
-            st.session_state["p3_e_key"] = "early lesion detection, asymptomatic stage, real-time alert"
-            st.session_state["p3_z_key"] = "早期病斑偵測, 潛伏期診斷, 症狀前檢測, 即時告警"
-            st.session_state["claims_data"] = [
-                {"要件編號": "Element 1A", "本案 Claim 1 技術要件": "一多光譜感測模組，配置於移動軌道，具有特定吸收峰窄波段濾波感測器", "前案 D1 對應技術": "常規 RGB 監視器", "前案 D2 對應技術": "手持式分光輻射計", "符合性判定": "NO (不符/差異點)", "差異/進步性說明": "本案特定窄波段針對植物水分及葉綠素吸收峰。"}
-            ]
-        st.success(f"已成功載入：{selected_template}")
+        st.success(f"已成功載入範本：{selected_template}")
         st.rerun()
 
 with col_tmpl2:
@@ -863,7 +754,7 @@ with col_tmpl2:
         st.session_state["p1_n_key"] = "Target: 應用標的"
         st.session_state["p1_e_key"] = ""
         st.session_state["p1_z_key"] = ""
-        st.session_state["p2_n_key"] = "Components: 核心組分/手段"
+        st.session_state["p2_n_key"] = "Components: 核心手段/組分"
         st.session_state["p2_e_key"] = ""
         st.session_state["p2_z_key"] = ""
         st.session_state["p3_n_key"] = "Property: 技術功效/物化特性"
@@ -874,48 +765,25 @@ with col_tmpl2:
         ]
         st.session_state["last_oa_result"] = None
         st.session_state["last_fetched_patent"] = None
-        st.info("已清空所有輸入欄位與矩陣。")
+        st.info("已清空所有欄位。")
         st.rerun()
 
-with st.sidebar.expander("📖 操作手冊與使用說明", expanded=False):
-    st.markdown(USER_MANUAL_MARKDOWN)
-
-tab_patent, tab_trade_secret, tab_trademark, tab_laws = st.tabs([
-    "📄 專利檢索與 Claims 比對矩陣 (含化學配方)",
-    "🔐 營業秘密 vs. 專利策略矩陣",
-    "🏷️ 商標權佈局與圖樣生成器",
-    "⚖ 智財法規速查 (專利/商標/營業秘密)"
-])
-
 # ==============================================================================
-# TAB 1: 專利權模組 (官方 Key-State 直接雙向綁定)
+# TAB 1: 專利權模組 (實時動態解析，拒絕固定死資料)
 # ==============================================================================
 with tab_patent:
     st.subheader("1. 發明標的名稱與 AI 自動拆解")
 
-    # 歷史紀錄快速選單
-    history_opts = ["-- 📜 從已查詢項目或範例選單快選 --"] + st.session_state["search_history"]
-    sel_hist = st.selectbox(
-        "📜 已查詢紀錄快選（點選立即帶入標的名稱）：",
-        options=history_opts,
-        index=0
-    )
-    if sel_hist != "-- 📜 從已查詢項目或範例選單快選 --" and sel_hist != st.session_state["target_title_key"]:
+    history_opts = ["-- 📜 從已查詢項目快選 --"] + st.session_state["search_history"]
+    sel_hist = st.selectbox("📜 已查詢紀錄快選（點選立即帶入）：", options=history_opts, index=0)
+    if sel_hist != "-- 📜 從已查詢項目快選 --" and sel_hist != st.session_state["target_title_key"]:
         st.session_state["target_title_key"] = sel_hist
         st.rerun()
 
     col_input1, col_input2 = st.columns([3, 1])
     with col_input1:
-        # 正式綁定 target_title_key
-        st.text_input(
-            "請輸入專利標的名稱：",
-            key="target_title_key",
-            placeholder="例如：半導體先進封裝用低介電高散熱環氧樹脂填料組成物"
-        )
-        st.checkbox(
-            "🧪 本案為化學/配方/材料組成物發明 (啟動組分配比與協同增效特化拆解)",
-            key="is_chem_key"
-        )
+        st.text_input("請輸入專利標的名稱：", key="target_title_key", placeholder="例如：高韌性熱塑性碳纖維自行車車架成型技術")
+        st.checkbox("🧪 本案為化學/配方/材料組成物發明 (啟動組分配比與協同增效特化拆解)", key="is_chem_key")
 
     with col_input2:
         st.write("")
@@ -929,46 +797,48 @@ with tab_patent:
         elif not curr_title:
             st.warning("請先輸入專利標的名稱。")
         else:
-            with st.spinner("🤖 正在拆解技術特徵並寫入欄位..."):
-                ai_res = analyze_patent_with_gemini(
-                    user_api_key.strip(),
-                    curr_title,
-                    is_chemical=st.session_state["is_chem_key"]
-                )
+            with st.spinner(f"🤖 正在為【{curr_title}】實時分析技術特徵與 Claims 要件..."):
+                try:
+                    ai_res = analyze_patent_with_gemini(
+                        user_api_key.strip(),
+                        curr_title,
+                        is_chemical=st.session_state["is_chem_key"]
+                    )
 
-                # 存入歷史
-                if curr_title not in st.session_state["search_history"]:
-                    st.session_state["search_history"].insert(0, curr_title)
+                    if curr_title not in st.session_state["search_history"]:
+                        st.session_state["search_history"].insert(0, curr_title)
 
-                # 關鍵修復：直接將提取到的數據覆寫進 Session State 的元變數中！
-                st.session_state["ipc_key"] = ai_res.get("ipc", "")
-                st.session_state["cpc_key"] = ai_res.get("cpc", "")
+                    # 實時動態數據直接覆寫 Session State
+                    st.session_state["ipc_key"] = ai_res.get("ipc", "")
+                    st.session_state["cpc_key"] = ai_res.get("cpc", "")
 
-                st.session_state["p1_n_key"] = ai_res.get("pillar_a_name") or "Target: 應用標的"
-                st.session_state["p1_e_key"] = ai_res.get("pillar_a_en") or ""
-                st.session_state["p1_z_key"] = ai_res.get("pillar_a_zh") or ""
+                    st.session_state["p1_n_key"] = ai_res.get("pillar_a_name", f"Target: {curr_title}")
+                    st.session_state["p1_e_key"] = ai_res.get("pillar_a_en", "")
+                    st.session_state["p1_z_key"] = ai_res.get("pillar_a_zh", "")
 
-                st.session_state["p2_n_key"] = ai_res.get("pillar_b_name") or "Components: 核心組分/手段"
-                st.session_state["p2_e_key"] = ai_res.get("pillar_b_en") or ""
-                st.session_state["p2_z_key"] = ai_res.get("pillar_b_zh") or ""
+                    st.session_state["p2_n_key"] = ai_res.get("pillar_b_name", "Mechanism: 核心構件/手段")
+                    st.session_state["p2_e_key"] = ai_res.get("pillar_b_en", "")
+                    st.session_state["p2_z_key"] = ai_res.get("pillar_b_zh", "")
 
-                st.session_state["p3_n_key"] = ai_res.get("pillar_c_name") or "Property: 技術功效/物化特性"
-                st.session_state["p3_e_key"] = ai_res.get("pillar_c_en") or ""
-                st.session_state["p3_z_key"] = ai_res.get("pillar_c_zh") or ""
+                    st.session_state["p3_n_key"] = ai_res.get("pillar_c_name", "Effect: 技術功效與特性")
+                    st.session_state["p3_e_key"] = ai_res.get("pillar_c_en", "")
+                    st.session_state["p3_z_key"] = ai_res.get("pillar_c_zh", "")
 
-                if ai_res.get("claim_elements"):
-                    st.session_state["claims_data"] = ai_res.get("claim_elements")
+                    if ai_res.get("claim_elements"):
+                        st.session_state["claims_data"] = ai_res.get("claim_elements")
 
-                # 表格重置計數器 +1，強制拋棄舊快取
-                st.session_state["table_reset_counter"] += 1
-                st.success("🎉 特徵拆解完成！三支柱欄位與 Claims 已全部更新！")
-                st.rerun()
+                    st.session_state["table_reset_counter"] += 1
+                    st.success(f"🎉 已完成【{curr_title}】之專屬分析！支柱與 Claims 已實時更新！")
+                    st.rerun()
+
+                except Exception as e:
+                    st.error(f"❌ AI 呼叫或分析失敗，原因：{e}")
 
     col_class1, col_class2 = st.columns(2)
     with col_class1:
-        st.text_input("IPC 分類號 (逗號隔開)", key="ipc_key", placeholder="例: C08L 63/00, C25D 3/46")
+        st.text_input("IPC 分類號 (逗號隔開)", key="ipc_key", placeholder="例: B62K 3/02, B29C 70/46")
     with col_class2:
-        st.text_input("CPC 分類號 (逗號隔開)", key="cpc_key", placeholder="例: C08L 63/00, C25D 3/64")
+        st.text_input("CPC 分類號 (逗號隔開)", key="cpc_key", placeholder="例: B62K 3/02, B29C 70/46")
 
     st.markdown("---")
     st.subheader("2. 技術特徵三支柱展開")
@@ -1035,7 +905,6 @@ with tab_patent:
     st.markdown("---")
     st.subheader("4. 申請專利範圍全要件比對矩陣 (線上編輯)")
 
-    # 關鍵修復：表格 key 繫結 table_reset_counter，每次 AI 拆解或載入範本後強制換 key 重新渲染最新內容
     edited_df = st.data_editor(
         pd.DataFrame(st.session_state["claims_data"]),
         num_rows="dynamic",
@@ -1061,7 +930,7 @@ with tab_patent:
         if not user_api_key.strip():
             st.error("請先於左側側邊欄輸入有效的 Gemini API Key！")
         else:
-            with st.spinner("🤖 正在提煉差異點與配方協同增效，撰寫專利法第22條進步性理由書..."):
+            with st.spinner("🤖 正在提煉差異點與突變功效，撰寫專利法第22條進步性理由書..."):
                 diff_rows = []
                 for _, r in edited_df.iterrows():
                     elem = r.get("要件編號", "")
@@ -1071,18 +940,21 @@ with tab_patent:
                     diff_rows.append(f"【{elem}】本案要件：{claim_desc}；前案技術：{d1_desc}；差異與進步功效：{diff_note}")
 
                 diff_summary = "\n".join(diff_rows)
-                rejection_summary = "審查官認為本案 Claim 1 所請特徵已被先前技術個別教示，所限定之成分重量比為通常知識者之常規試誤，欠缺進步性。"
+                rejection_summary = "審查官認為本案 Claim 1 所請特徵已被先前技術個別教示，為通常知識者之常規試誤，欠缺進步性。"
                 
-                quick_oa_res = generate_oa_response_with_gemini(
-                    user_api_key.strip(),
-                    "專利法第 22 條第 2 項（進步性核駁 - 含化學配方數值臨界性與突變增效抗辯）",
-                    st.session_state["target_title_key"] if st.session_state["target_title_key"] else "本發明專利申請案",
-                    rejection_summary,
-                    diff_summary
-                )
-                st.session_state["last_oa_result"] = quick_oa_res
-                st.success("🎉 進步性申復理由書產生完成！")
-                st.rerun()
+                try:
+                    quick_oa_res = generate_oa_response_with_gemini(
+                        user_api_key.strip(),
+                        "專利法第 22 條第 2 項（進步性核駁 - 突出技術特徵與顯著功效）",
+                        st.session_state["target_title_key"] if st.session_state["target_title_key"] else "本發明專利申請案",
+                        rejection_summary,
+                        diff_summary
+                    )
+                    st.session_state["last_oa_result"] = quick_oa_res
+                    st.success("🎉 進步性申復理由書產生完成！")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"生成答辯書失敗: {e}")
 
     if st.session_state.get("last_oa_result"):
         with st.expander("📄 檢視最新產出之專利申復答辯理由書", expanded=True):
@@ -1176,8 +1048,6 @@ with tab_patent:
 # ==============================================================================
 with tab_trade_secret:
     st.subheader("🔐 營業秘密 vs. 專利策略佈局決策矩陣 (Patent vs. Trade Secret Decision Matrix)")
-    st.markdown("透過下方 5 大維度的量化權重指標，系統將自動為您運算並給出最佳保護策略建議。")
-
     col_ts_eval1, col_ts_eval2 = st.columns(2)
     with col_ts_eval1:
         st.markdown("#### 1. 技術特性與外部逆向工程難易度")
@@ -1199,7 +1069,7 @@ with tab_trade_secret:
         if ts_weighted_score >= 3.6:
             st.success("🎯 **強烈建議：封存為【營業秘密】保護**")
         elif ts_weighted_score >= 2.8:
-            st.warning("⚖️ **雙軌佈局：【專利 ＋ 營業秘密】混合防禦**")
+            st.warning("⚖️️ **雙軌佈局：【專利 ＋ 營業秘密】混合防禦**")
         else:
             st.info("📄 **強烈建議：全面申請【發明專利】公開排他**")
 
@@ -1221,7 +1091,7 @@ with tab_trademark:
     with col_tm1:
         st.markdown("#### 1. 品牌標的與產品資訊")
         tm_brand = st.text_input("擬申請商標文字 (中/英文)：", value="極塑 PolyUltra")
-        tm_desc = st.text_area("產品或服務技術概述：", value="用於先進半導體封裝之低介電環氧樹脂填料化合物。", height=100)
+        tm_desc = st.text_area("產品或服務技術概述：", value="用於先進複合材料、自行車或電子部件之強化構件。", height=100)
 
         if st.button("✨ 執行商標識別性與尼斯分類 AI 評估", type="secondary", use_container_width=True):
             if not user_api_key.strip():
@@ -1230,8 +1100,11 @@ with tab_trademark:
                 st.warning("請填寫擬申請之商標文字。")
             else:
                 with st.spinner("🤖 正在評估商標識別性與分類..."):
-                    st.session_state["tm_analysis"] = analyze_trademark_with_gemini(user_api_key.strip(), tm_brand.strip(), tm_desc.strip())
-                    st.success("🎉 商標分析完成！")
+                    try:
+                        st.session_state["tm_analysis"] = analyze_trademark_with_gemini(user_api_key.strip(), tm_brand.strip(), tm_desc.strip())
+                        st.success("🎉 商標分析完成！")
+                    except Exception as e:
+                        st.error(f"商標分析失敗: {e}")
 
         if st.session_state.get("tm_analysis"):
             res = st.session_state["tm_analysis"]
