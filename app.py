@@ -244,12 +244,13 @@ def fetch_patent_data_from_google(patent_no: str) -> dict:
     }
 
 # ==============================================================================
-# 三、 Gemini AI 自動重試引擎 (實時針對標的拆解)
+# 三、 Gemini AI 自動重試引擎 (使用 gemini-3.6-flash 與 gemini-3.5-flash-lite)
 # ==============================================================================
 CANDIDATE_MODELS = [
-    "gemini-2.5-flash",
-    "gemini-2.0-flash",
-    "gemini-2.0-flash-lite"
+    "gemini-3.6-flash",          # 主力：指定使用之最新旗艦 Flash
+    "gemini-3.5-flash-lite",     # 次選：官方推薦之極速輕量化版本
+    "gemini-3.5-flash",          # 備援：標準端點
+    "gemini-3-flash"             # 備援：通用 Flash 端點
 ]
 
 def _extract_json_from_text(raw_text: str):
@@ -264,24 +265,46 @@ def _extract_json_from_text(raw_text: str):
 def generate_with_fallback(client, prompt: str, as_json: bool = True) -> str:
     last_err = None
     for model_name in CANDIDATE_MODELS:
-        try:
-            config_args = {}
-            if as_json:
-                config_args["response_mime_type"] = "application/json"
+        for attempt in range(2):
+            try:
+                config_args = {}
+                if as_json:
+                    config_args["response_mime_type"] = "application/json"
 
-            response = client.models.generate_content(
-                model=model_name,
-                contents=prompt,
-                config=types.GenerateContentConfig(**config_args)
-            )
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(**config_args)
+                )
 
-            if response and response.text:
-                return response.text
-        except Exception as e:
-            last_err = e
-            continue
+                if response and response.text:
+                    return response.text
+            except Exception as e:
+                err_str = str(e)
+                last_err = err_str
 
-    raise Exception(f"所有可用模型皆無法產生回應，最後錯誤：{last_err}")
+                # 若遇到 404 或型號下線，立即換下一個備援模型
+                if any(k in err_str.lower() for k in ["404", "not_found", "no longer available", "not supported"]):
+                    break
+
+                # 若遇到 503 或 429，等待退避重試
+                if any(code in err_str for code in ["503", "429", "UNAVAILABLE", "RESOURCE_EXHAUSTED", "high demand"]):
+                    time.sleep(2.0 * (attempt + 1))
+                    continue
+
+                if as_json and ("response_mime_type" in err_str or "json" in err_str.lower()):
+                    try:
+                        fallback_resp = client.models.generate_content(
+                            model=model_name,
+                            contents=prompt + "\n\n【重要：請務必以純 JSON 格式回傳，不要附加額外說明文字】"
+                        )
+                        if fallback_resp and fallback_resp.text:
+                            return fallback_resp.text
+                    except Exception:
+                        pass
+                break
+
+    raise Exception(f"所有備援模型皆無法呼叫，最後錯誤：{last_err}")
 
 def analyze_patent_with_gemini(api_key: str, title: str, is_chemical: bool = False) -> dict:
     client = genai.Client(api_key=api_key)
@@ -532,7 +555,7 @@ def create_tipo_trademark_bytes(
         total_block_w = target_logo_w + spacing + max_line_w
         start_x = (width_px - total_block_w) // 2
         logo_y = (height_px - new_h) // 2
-        canvas.paste(resized_logo, (logo_x, start_y))
+        canvas.paste(resized_logo, (logo_x, logo_y))
         text_center_x = start_x + target_logo_w + spacing + (max_line_w // 2)
         text_start_y = (height_px - total_text_h) // 2
         draw_multiline_block(text_start_y, text_center_x, max_line_w)
@@ -777,7 +800,7 @@ with st.sidebar.expander("📖 操作手冊與使用說明", expanded=False):
     st.markdown(USER_MANUAL_MARKDOWN)
 
 # ==============================================================================
-# 正式宣告四大主要 Tab (徹底修復 NameError: tab_patent 未定義)
+# 正式宣告四大主要 Tab (確保於各 Tab 使用前完成賦值)
 # ==============================================================================
 tab_patent, tab_trade_secret, tab_trademark, tab_laws = st.tabs([
     "📄 專利檢索與 Claims 比對矩陣 (含化學配方)",
@@ -1103,7 +1126,7 @@ with tab_trade_secret:
 # TAB 3: 商標權模組
 # ==============================================================================
 with tab_trademark:
-    st.subheader("🏷️ 商標尼斯分類佈局與 TIPO 規範圖樣產生器")
+    st.subheader("🏷️️ 商標尼斯分類佈局與 TIPO 規範圖樣產生器")
     col_tm1, col_tm2 = st.columns([1, 1])
 
     with col_tm1:
@@ -1167,7 +1190,7 @@ with tab_trademark:
 # TAB 4: 智財法規速查
 # ==============================================================================
 with tab_laws:
-    st.subheader("⚖️ 專利法、商標法與營業秘密法 關鍵條文指南")
+    st.subheader("⚖️️ 專利法、商標法與營業秘密法 關鍵條文指南")
     for item in IP_LAWS_DB:
         with st.expander(f"⚖️ {item['article']}：{item['title']}"):
             st.code(item["text"], language="text")
