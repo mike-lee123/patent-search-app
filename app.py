@@ -878,6 +878,7 @@ USER_MANUAL_MARKDOWN = """# 📖 智慧財產權整合工作台 操作手冊
 ## 模組一：📄 專利檢索與 Claims 比對矩陣 (含化學配方發明專利特化)
 
 ### 步驟 1：標的名稱與 AI 特徵拆解
+* **歷史查詢下拉選單**：每次查詢過的新項目會自動儲存於「📜 歷史查詢紀錄 / 範例快選」中，隨時可一鍵切換帶回。
 * **化學配方模式開關**：若發明屬於化學、材料、添加劑、聚合物或組成物，請勾選「🧪 本案為化學/配方/材料組成物發明」。AI 將特別針對**「組分官能基、配方重量比例、物化特性與協同增效」**進行專門解構。
 * **技術範本一鍵載入**：可在側邊欄選取範本後點擊「📥 載入範本」快速帶入；若要手動全新輸入，隨時點擊「🧹 清空所有」即可。
 
@@ -993,17 +994,23 @@ OA_ELECTROPLATING_DOC = """專利申復理由書（草稿）
 """
 
 # ==============================================================================
-# 七、 Streamlit 介面與 Session State 同步管理 (引入動態 Version Key 保證刷新)
+# 七、 Streamlit 介面與 Session State 同步管理 (引入歷史查詢清單與版本計數器)
 # ==============================================================================
 st.set_page_config(
     page_title="智慧財產權整合工作台 (專利 ＆ 商標 ＆ 營業秘密)",
-    page_icon="🛡️",
+    page_icon="🛡️️",
     layout="wide"
 )
 
 default_keys = {
-    "sync_version": 1,   # 核心機制：版本累加計數器，用於徹底擊穿 Streamlit 元件內部狀態鎖定
+    "sync_version": 1,
     "patent_title_input": "",
+    "search_history": [
+        "半導體先進封裝用低介電高散熱環氧樹脂填料組成物",
+        "用於貴金屬電鍍之晶粒細化光澤添加劑組成物",
+        "多光譜溫室作物病害早期偵測系統",
+        "高韌性熱塑性碳纖維自行車車架成型技術"
+    ],
     "ipc_input_val": "",
     "cpc_input_val": "",
     "p1_n_val": "Target: 應用標的",
@@ -1064,9 +1071,12 @@ selected_template = st.sidebar.selectbox(
 col_tmpl1, col_tmpl2 = st.sidebar.columns(2)
 with col_tmpl1:
     if st.button("📥 載入範本", use_container_width=True):
-        st.session_state["sync_version"] += 1  # 推進版本號
+        st.session_state["sync_version"] += 1
         if selected_template == "半導體封裝低介電環氧樹脂 (化學配方)":
-            st.session_state["patent_title_input"] = "半導體先進封裝用低介電高散熱環氧樹脂填料組成物"
+            title_val = "半導體先進封裝用低介電高散熱環氧樹脂填料組成物"
+            st.session_state["patent_title_input"] = title_val
+            if title_val not in st.session_state["search_history"]:
+                st.session_state["search_history"].insert(0, title_val)
             st.session_state["is_chemical_patent"] = True
             st.session_state["ipc_input_val"] = "C08L 63/00, C08K 3/36, C08G 59/20, H01L 23/29"
             st.session_state["cpc_input_val"] = "C08L 63/00, C08K 3/36, H01L 23/295"
@@ -1088,7 +1098,10 @@ with col_tmpl1:
             st.session_state["last_oa_result"] = OA_CHEM_FORMULA_DOC
 
         elif selected_template == "貴金屬電鍍晶粒細化光澤劑 (化學配方)":
-            st.session_state["patent_title_input"] = "用於貴金屬電鍍之晶粒細化光澤添加劑組成物"
+            title_val = "用於貴金屬電鍍之晶粒細化光澤添加劑組成物"
+            st.session_state["patent_title_input"] = title_val
+            if title_val not in st.session_state["search_history"]:
+                st.session_state["search_history"].insert(0, title_val)
             st.session_state["is_chemical_patent"] = True
             st.session_state["ipc_input_val"] = "C25D 3/46, C25D 3/48, C25D 3/62, C25D 3/64"
             st.session_state["cpc_input_val"] = "C25D 3/46, C25D 3/48, C25D 3/64"
@@ -1110,7 +1123,10 @@ with col_tmpl1:
             st.session_state["last_oa_result"] = OA_ELECTROPLATING_DOC
 
         elif selected_template == "多光譜溫室作物病害早期偵測系統":
-            st.session_state["patent_title_input"] = "多光譜溫室作物病害早期偵測系統"
+            title_val = "多光譜溫室作物病害早期偵測系統"
+            st.session_state["patent_title_input"] = title_val
+            if title_val not in st.session_state["search_history"]:
+                st.session_state["search_history"].insert(0, title_val)
             st.session_state["is_chemical_patent"] = False
             st.session_state["ipc_input_val"] = "A01G 9/24, G01N 21/84, G06V 20/10"
             st.session_state["cpc_input_val"] = "A01G 9/24, G01N 2021/8466"
@@ -1133,7 +1149,7 @@ with col_tmpl1:
 
 with col_tmpl2:
     if st.button("🧹 清空所有", use_container_width=True):
-        st.session_state["sync_version"] += 1  # 推進版本號，強制清空
+        st.session_state["sync_version"] += 1
         st.session_state["patent_title_input"] = ""
         st.session_state["ipc_input_val"] = ""
         st.session_state["cpc_input_val"] = ""
@@ -1176,19 +1192,43 @@ tab_patent, tab_trade_secret, tab_trademark, tab_laws = st.tabs([
 # TAB 1: 專利權模組 (特化化學配方專利)
 # ==============================================================================
 with tab_patent:
-    ver = st.session_state["sync_version"]  # 當前畫面版本標記
+    ver = st.session_state["sync_version"]
 
     st.subheader("1. 發明標的名稱與 AI 自動拆解")
+
+    # --------------------------------------------------------------------------
+    # 歷史查詢項目下拉選單 (自動儲存與快速重載)
+    # --------------------------------------------------------------------------
+    history_options = ["-- 📜 從已查詢項目或範例選單快選 --"] + st.session_state["search_history"]
+    
+    selected_history = st.selectbox(
+        "📜 已查詢紀錄快選（點選立即帶入標的名稱）：",
+        options=history_options,
+        index=0,
+        key=f"history_select_{ver}",
+        help="此處會自動記錄您每次查詢過的新項目。點擊任一項目即可自動帶入輸入框。"
+    )
+
+    # 若使用者在下拉選單切換項目，立即更新輸入框
+    if selected_history != "-- 📜 從已查詢項目或範例選單快選 --" and selected_history != st.session_state["patent_title_input"]:
+        st.session_state["patent_title_input"] = selected_history
+        st.session_state["sync_version"] += 1
+        st.rerun()
+
     col_input1, col_input2 = st.columns([3, 1])
 
     with col_input1:
         target_title = st.text_input(
-            "請輸入專利標的名稱：",
+            "請輸入專利標的名稱（或自上方選單選擇）：",
             value=st.session_state["patent_title_input"],
             key=f"patent_title_input_{ver}",
             placeholder="例如：半導體先進封裝用低介電高散熱環氧樹脂填料組成物 或 晶圓搬運機械手臂"
         )
-        is_chem = st.checkbox("🧪 本案為化學/配方/材料組成物發明 (啟動組分配比與協同增效特化拆解)", value=st.session_state["is_chemical_patent"], key=f"is_chem_{ver}")
+        is_chem = st.checkbox(
+            "🧪 本案為化學/配方/材料組成物發明 (啟動組分配比與協同增效特化拆解)",
+            value=st.session_state["is_chemical_patent"],
+            key=f"is_chem_{ver}"
+        )
 
     with col_input2:
         st.write("")
@@ -1202,10 +1242,18 @@ with tab_patent:
             st.warning("請先輸入專利標的名稱。")
         else:
             with st.spinner("🤖 正在拆解技術特徵（若 API 配額受限將自動啟動本地引擎保證完成）..."):
-                ai_res = analyze_patent_with_gemini(user_api_key.strip(), target_title.strip(), is_chemical=is_chem)
+                clean_title = target_title.strip()
+                ai_res = analyze_patent_with_gemini(user_api_key.strip(), clean_title, is_chemical=is_chem)
 
-                # 更新內部 Session 狀態，並強行遞增版本號迫使所有元件重繪
-                st.session_state["patent_title_input"] = target_title.strip()
+                # 將本次查詢項目加入歷史紀錄清單（去重並置頂）
+                history_list = st.session_state["search_history"]
+                if clean_title in history_list:
+                    history_list.remove(clean_title)
+                history_list.insert(0, clean_title)
+                st.session_state["search_history"] = history_list
+
+                # 更新內部 Session 狀態
+                st.session_state["patent_title_input"] = clean_title
                 st.session_state["is_chemical_patent"] = is_chem
                 st.session_state["ipc_input_val"] = ai_res.get("ipc", "")
                 st.session_state["cpc_input_val"] = ai_res.get("cpc", "")
@@ -1225,8 +1273,8 @@ with tab_patent:
                 if ai_res.get("claim_elements"):
                     st.session_state["claims_data"] = ai_res.get("claim_elements")
 
-                st.session_state["sync_version"] += 1  # 核心修正：推動版本號，徹底擊穿快取
-                st.success("🎉 特徵拆解完成！三支柱欄位與 Claims 已同步刷新！")
+                st.session_state["sync_version"] += 1  # 推進版本號保證刷新
+                st.success(f"🎉 已成功拆解【{clean_title}】並已自動記錄至歷史選單中！")
                 st.rerun()
 
     col_class1, col_class2 = st.columns(2)
@@ -1299,7 +1347,7 @@ with tab_patent:
                                 row["差異/進步性說明"] = ai_mappings[idx].get("diff_note")
 
                     st.session_state["claims_data"] = curr_claims
-                    st.session_state["sync_version"] += 1  # 推進版本號刷新編輯器
+                    st.session_state["sync_version"] += 1
                     st.success(f"✅ 成功擷取專利：【{p_data['patent_no']}】{p_data['title']}，已完成比對！")
                     st.rerun()
 
@@ -1426,7 +1474,6 @@ with tab_patent:
             if gpss_query.strip():
                 render_copy_button(gpss_query, "📋 快速複製 GPSS 檢索式", button_id="copyGPSS")
                 
-                # 提供官方保證暢通的雙入口連結
                 col_link_a, col_link_b = st.columns(2)
                 with col_link_a:
                     st.link_button(
