@@ -247,10 +247,10 @@ def fetch_patent_data_from_google(patent_no: str) -> dict:
 # 三、 Gemini AI 自動重試引擎 (使用 gemini-3.6-flash 與 gemini-3.5-flash-lite)
 # ==============================================================================
 CANDIDATE_MODELS = [
-    "gemini-3.6-flash",
-    "gemini-3.5-flash-lite",
-    "gemini-3.5-flash",
-    "gemini-3-flash"
+    "gemini-3.6-flash",          # 主力：指定使用之最新旗艦 Flash
+    "gemini-3.5-flash-lite",     # 次選：官方推薦之極速輕量化版本
+    "gemini-3.5-flash",          # 備援：標準端點
+    "gemini-3-flash"             # 備援：通用 Flash 端點
 ]
 
 def _extract_json_from_text(raw_text: str):
@@ -553,7 +553,7 @@ def create_tipo_trademark_bytes(
         total_block_w = target_logo_w + spacing + max_line_w
         start_x = (width_px - total_block_w) // 2
         logo_y = (height_px - new_h) // 2
-        canvas.paste(resized_logo, (logo_x, logo_y))
+        canvas.paste(resized_logo, (logo_x, start_y))
         text_center_x = start_x + target_logo_w + spacing + (max_line_w // 2)
         text_start_y = (height_px - total_text_h) // 2
         draw_multiline_block(text_start_y, text_center_x, max_line_w)
@@ -1542,4 +1542,8 @@ with tab_laws:
     with col_ext1:
         st.link_button("📜 《全國法規資料庫》", "https://law.moj.gov.tw/", use_container_width=True)
     with col_ext2:
-        st.link_button("⚖️ 《司法院裁判書系統》", "https://judgment.judicial.gov.tw/", use_container_width=
+        st.link_button("⚖️ 《司法院裁判書系統》", "https://judgment.judicial.gov.tw/", use_container_width=True)
+    with col_ext3:
+        st.link_button("🏛 《智慧財產局法規審查基準》", "https://www.tipo.gov.tw/", use_container_width=True)
+    with col_ext4:
+        st.link_button("🏢 《智慧財產及商業法院》", "https://ipc.judicial.gov.tw/", use_container_width=True)
