@@ -244,7 +244,7 @@ def fetch_patent_data_from_google(patent_no: str) -> dict:
     }
 
 # ==============================================================================
-# 三、 Gemini AI 自動重試引擎 (徹底移除死資料，實時針對當前標的拆解)
+# 三、 Gemini AI 自動重試引擎 (實時針對標的拆解)
 # ==============================================================================
 CANDIDATE_MODELS = [
     "gemini-2.5-flash",
@@ -284,7 +284,6 @@ def generate_with_fallback(client, prompt: str, as_json: bool = True) -> str:
     raise Exception(f"所有可用模型皆無法產生回應，最後錯誤：{last_err}")
 
 def analyze_patent_with_gemini(api_key: str, title: str, is_chemical: bool = False) -> dict:
-    """精準針對使用者的標的名稱，動態提煉專屬的支柱與 Claim 1 要件"""
     client = genai.Client(api_key=api_key)
     
     type_instruction = ""
@@ -294,7 +293,7 @@ def analyze_patent_with_gemini(api_key: str, title: str, is_chemical: bool = Fal
         - 支柱 A (Target)：本案目標材料/組成物名稱、應用標的。
         - 支柱 B (Components)：本案關鍵化學成分、核心單體、官能基、添加劑。
         - 支柱 C (Property)：本案主要物化性能、突變功效、相乘協同增益 (如低損耗、抗剝離)。
-        - Claim 1 要件：請嚴格拆解出該發明專利 Claim 1 的具體要件（如：Element 1A 主反應物、Element 1B 改質劑/填料、Element 1C 特定重量百分比臨界配比、Element 1D 助劑），不得泛泛而談！
+        - Claim 1 要件：請嚴格拆解出該發明專利 Claim 1 的具體要件（如：Element 1A 主反應物、Element 1B 改質劑/填料、Element 1C 特定重量百分比臨界配比），不得泛泛而談！
         """
     else:
         type_instruction = """
@@ -533,7 +532,7 @@ def create_tipo_trademark_bytes(
         total_block_w = target_logo_w + spacing + max_line_w
         start_x = (width_px - total_block_w) // 2
         logo_y = (height_px - new_h) // 2
-        canvas.paste(resized_logo, (logo_x, logo_y))
+        canvas.paste(resized_logo, (logo_x, start_y))
         text_center_x = start_x + target_logo_w + spacing + (max_line_w // 2)
         text_start_y = (height_px - total_text_h) // 2
         draw_multiline_block(text_start_y, text_center_x, max_line_w)
@@ -605,8 +604,14 @@ IP_LAWS_DB = [
     }
 ]
 
+USER_MANUAL_MARKDOWN = """# 📖 智慧財產權整合工作台 操作手冊
+1. **標的拆解**：輸入名稱並點選「✨ Gemini AI 自動拆解」。
+2. **前案比對**：輸入專利號並點擊「📥 爬取並自動填入」。
+3. **表格編輯**：直接於表格內編輯要件與進步性說明。
+"""
+
 # ==============================================================================
-# 六、 Streamlit 介面與 Session State 同步管理 (動態直接刷新，絕不鎖定)
+# 六、 Streamlit 介面與 Session State 同步管理
 # ==============================================================================
 st.set_page_config(
     page_title="智慧財產權整合工作台 (專利 ＆ 商標 ＆ 營業秘密)",
@@ -768,8 +773,21 @@ with col_tmpl2:
         st.info("已清空所有欄位。")
         st.rerun()
 
+with st.sidebar.expander("📖 操作手冊與使用說明", expanded=False):
+    st.markdown(USER_MANUAL_MARKDOWN)
+
 # ==============================================================================
-# TAB 1: 專利權模組 (實時動態解析，拒絕固定死資料)
+# 正式宣告四大主要 Tab (徹底修復 NameError: tab_patent 未定義)
+# ==============================================================================
+tab_patent, tab_trade_secret, tab_trademark, tab_laws = st.tabs([
+    "📄 專利檢索與 Claims 比對矩陣 (含化學配方)",
+    "🔐 營業秘密 vs. 專利策略矩陣",
+    "🏷️ 商標權佈局與圖樣生成器",
+    "⚖ 智財法規速查 (專利/商標/營業秘密)"
+])
+
+# ==============================================================================
+# TAB 1: 專利權模組
 # ==============================================================================
 with tab_patent:
     st.subheader("1. 發明標的名稱與 AI 自動拆解")
@@ -1069,7 +1087,7 @@ with tab_trade_secret:
         if ts_weighted_score >= 3.6:
             st.success("🎯 **強烈建議：封存為【營業秘密】保護**")
         elif ts_weighted_score >= 2.8:
-            st.warning("⚖️️ **雙軌佈局：【專利 ＋ 營業秘密】混合防禦**")
+            st.warning("⚖️ **雙軌佈局：【專利 ＋ 營業秘密】混合防禦**")
         else:
             st.info("📄 **強烈建議：全面申請【發明專利】公開排他**")
 
