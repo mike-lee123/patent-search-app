@@ -691,7 +691,7 @@ def create_tipo_trademark_bytes(
         start_x = (width_px - total_block_w) // 2
 
         logo_y = (height_px - new_h) // 2
-        canvas.paste(resized_logo, (logo_x, logo_y))
+        canvas.paste(resized_logo, (logo_y, start_y))
 
         text_center_x = start_x + target_logo_w + spacing + (max_line_w // 2)
         text_start_y = (height_px - total_text_h) // 2
@@ -1421,11 +1421,27 @@ with tab_patent:
                 st.link_button("🌐 一鍵前往 Google Patents 檢索", f"https://patents.google.com/?q={encoded_query}", type="secondary", use_container_width=True)
 
         with col_res2:
-            st.markdown("#### 🇹🇼 台灣智慧局專利檢索系統 (TWPAT) 檢索式")
+            st.markdown("#### 🇹🇼 台灣智慧局專利檢索系統 (GPSS / TWPAT) 檢索式")
             st.code(gpss_query if gpss_query else "（無有效檢索式）", language="text")
             if gpss_query.strip():
                 render_copy_button(gpss_query, "📋 快速複製 GPSS 檢索式", button_id="copyGPSS")
-                st.link_button("🇹🇼 開啟台灣智慧局專利檢索系統 (TWPAT)", "https://twpat.tipo.gov.tw/", type="secondary", use_container_width=True)
+                
+                # 提供官方保證暢通的雙入口連結
+                col_link_a, col_link_b = st.columns(2)
+                with col_link_a:
+                    st.link_button(
+                        "🇹🇼 全球專利檢索系統 (GPSS)",
+                        "https://tiponet.tipo.gov.tw/gpss/",
+                        type="secondary",
+                        use_container_width=True
+                    )
+                with col_link_b:
+                    st.link_button(
+                        "🇹🇼 專利資訊檢索 (TWPAT)",
+                        "https://tiponet.tipo.gov.tw/twpat/",
+                        type="secondary",
+                        use_container_width=True
+                    )
 
         st.markdown("---")
         st.subheader("💾 匯出專利報告檔")
