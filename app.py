@@ -247,10 +247,10 @@ def fetch_patent_data_from_google(patent_no: str) -> dict:
 # 三、 Gemini AI 自動重試引擎 (使用 gemini-3.6-flash 與 gemini-3.5-flash-lite)
 # ==============================================================================
 CANDIDATE_MODELS = [
-    "gemini-3.6-flash",          # 主力：指定使用之最新旗艦 Flash
-    "gemini-3.5-flash-lite",     # 次選：官方推薦之極速輕量化版本
-    "gemini-3.5-flash",          # 備援：標準端點
-    "gemini-3-flash"             # 備援：通用 Flash 端點
+    "gemini-3.6-flash",
+    "gemini-3.5-flash-lite",
+    "gemini-3.5-flash",
+    "gemini-3-flash"
 ]
 
 def _extract_json_from_text(raw_text: str):
@@ -604,24 +604,134 @@ def render_copy_button(text_to_copy: str, button_label: str = "📋 點擊複製
     components.html(html_code, height=50)
 
 # ==============================================================================
-# 五、 智財核心法規資料庫
+# 五、 智財核心法規完整資料庫 (專利法 / 商標法 / 營業秘密法)
 # ==============================================================================
 IP_LAWS_DB = [
     {
         "category": "營業秘密法",
         "article": "營業秘密法 第 2 條",
         "title": "營業秘密之法定三要件",
-        "keywords": "營業秘密, 秘密性, 經濟價值, 合理保密措施",
-        "text": "本法所稱營業秘密，指方法、技術、製程、配方、程式、設計或其他可用於生產、銷售或經營之資訊，而符合下列要件者：\n一、非一般涉及該類資訊之人所知者（秘密性）。\n二、因其秘密性而具有實際或潛在之經濟價值者（經濟價值性）。\n三、所有人已採取合理之保密措施者（合理保密措施）。",
-        "explanation": "營業秘密必須「嚴格具備」三要件，特別是合理保密措施（門禁、NDA、加密）。"
+        "keywords": "營業秘密, 秘密性, 經濟價值, 合理保密措施, 配方, 製程",
+        "text": (
+            "本法所稱營業秘密，指方法、技術、製程、配方、程式、設計或其他可用於生產、銷售或經營之資訊，而符合下列要件者：\n"
+            "一、非一般涉及該類資訊之人所知者（秘密性）。\n"
+            "二、因其秘密性而具有實際或潛在之經濟價值者（經濟價值性）。\n"
+            "三、所有人已採取合理之保密措施者（合理保密措施）。"
+        ),
+        "explanation": "化學配方若不公開申請專利，欲以營業秘密法保護，必須「嚴格具備」三要件。尤其是第三款「合理保密措施」，必須建置門禁管制、NDA簽署、權限分級、標示機密標籤及加密儲存，否則訴訟時將被法院直接判定不構成營業秘密而全面敗訴。"
+    },
+    {
+        "category": "營業秘密法",
+        "article": "營業秘密法 第 10 條",
+        "title": "侵害營業秘密之行為態樣（反向工程不構成侵權）",
+        "keywords": "侵權, 不正方法, 洩漏, 違背保密義務, 竊取, 反向工程",
+        "text": (
+            "有下列情形之一者，為侵害營業秘密：\n"
+            "一、以竊取、毀損、脅迫、詐術或其他不正當方法取得營業秘密，或取得後進而使用、洩漏者。\n"
+            "二、知悉或因重大過失而不知其為前款之營業秘密，而取得、使用或洩漏者。\n"
+            "三、持有營業秘密，無正當理由而洩漏或使用，或違背維持營業秘密之義務者。\n"
+            "四、因法律行為取得營業秘密，而以不正當方法使用或洩漏者。"
+        ),
+        "explanation": "【實務精要】：反向工程（Reverse Engineering）自市場合法購得成品並拆解還原成分者，屬於合法技術獲取，不構成侵權！因此若配方或塗料極易被對手化驗解析還原，切勿僅仰賴營業秘密，應儘速申請專利防禦。"
+    },
+    {
+        "category": "營業秘密法",
+        "article": "營業秘密法 第 11 條",
+        "title": "侵害營業秘密之民事救濟（排除侵害與銷毀請求權）",
+        "keywords": "排除侵害, 防止侵害, 銷毀, 損害賠償, 查扣",
+        "text": (
+            "營業秘密受侵害時，所有人得請求排除之；有侵害之虞者，得請求防止之。\n"
+            "營業秘密所有人請求排除或防止侵害時，得請求銷毀、返還或為其他必要處分，包括侵害行為所製造之成品或供侵害行為所用之物。"
+        ),
+        "explanation": "原告可聲請法院查扣銷毀對手仿冒生產之化學原料、產線模具與中間體，並防止其進一步進入市場流通。"
+    },
+    {
+        "category": "營業秘密法",
+        "article": "營業秘密法 第 13 條之 1 / 第 13 條之 2",
+        "title": "侵害營業秘密罪之刑事責任（境內與境外加重刑責）",
+        "keywords": "刑事責任, 有期徒刑, 罰金, 意圖域外使用, 國安, 境外",
+        "text": (
+            "意圖為自己或第三人不法之利益，或損害營業秘密所有人之利益，而有下列情形之一，處五年以下有期徒刑或拘役，得併科新臺幣一百萬元以上一千萬元以下罰金：\n"
+            "一、以竊取、侵占、詐術、脅迫、未經授權而重製或其他不正方法而取得營業秘密，或取得後進而使用、洩漏者。\n"
+            "二、知悉或因重大過失而不知為前款之營業秘密，而取得、使用或洩漏者。\n"
+            "三、持有營業秘密，未經授權或逾越授權範圍而重製、使用或洩漏該營業秘密者。\n\n"
+            "【第 13 條之 2 意圖在境外使用者】：\n"
+            "意圖在外國、大陸地區、香港或澳門使用，而犯前條第一項各款之罪者，處一年以上十年以下有期徒刑，得併科新臺幣三百萬元以上五千萬元以下罰金。"
+        ),
+        "explanation": "帶走公司核心技術或配方跳槽境外競爭對手，適用第 13-2 條境外加重處罰，刑度高達 1 年以上 10 年以下有期徒刑，屬重罪案件，檢調可依法實施境管與強制搜索扣押。"
+    },
+    {
+        "category": "專利法",
+        "article": "專利法 第 21 條",
+        "title": "發明之定義",
+        "keywords": "自然法則, 技術思想, 發明, 化合物, 配方",
+        "text": "本法所稱發明，指利用自然法則之技術思想之創作。",
+        "explanation": "化學物質、分子結構、聚合物改質、配方添加劑、物理混合物及其製備方法，皆屬利用自然法則之法定發明標的。"
     },
     {
         "category": "專利法",
         "article": "專利法 第 22 條",
         "title": "專利三要件（產業利用性、新穎性、進步性）",
-        "keywords": "新穎性, 進步性, 產業利用性, 協同增效",
-        "text": "可供產業上利用之發明，無下列情事之一，得依本法申請專利：\n一、申請前已見於刊物者。\n二、申請前已公開實施者。\n三、申請前已為公眾所知悉者。\n發明雖無前項各款所列情事，但為其所屬技術領域中具有通常知識者依申請前之先前技術所能輕易完成時，仍不得依本法申請專利。",
-        "explanation": "技術特徵若產生超出預期之功效，即具備法定進步性。"
+        "keywords": "新穎性, 進步性, 產業利用性, 協同增效, 數值限定, 事後諸葛",
+        "text": (
+            "可供產業上利用之發明，無下列情事之一，得依本法申請專利：\n"
+            "一、申請前已見於刊物者。\n"
+            "二、申請前已公開實施者。\n"
+            "三、申請前已為公眾所知悉者。\n\n"
+            "發明雖無前項各款所列情事，但為其所屬技術領域中具有通常知識者依申請前之先前技術所能輕易完成時，仍不得依本法申請專利。"
+        ),
+        "explanation": "【化學配方審查實務】：成分組合若僅為已知助劑的簡單疊加，欠缺進步性；但若配方比例產生超出預期之「突變協同功效（Synergistic Effect）」，或特定數值區間內物性產生不可預期躍升，即具備法定進步性。"
+    },
+    {
+        "category": "專利法",
+        "article": "專利法 第 26 條",
+        "title": "說明書充分揭露與請求項明確性（可據以實現要件）",
+        "keywords": "說明書, 實施例, 可據以實現, 明確性, 支持",
+        "text": (
+            "說明書應明確且充分揭露，使該發明所屬技術領域中具有通常知識者，能瞭解其內容，並可據以實現。\n"
+            "申請專利範圍應界定申請專利之發明；其得包括一項以上之請求項，各請求項應以明確、簡潔之方式記載，且必須為說明書所支持。"
+        ),
+        "explanation": "【化學配方致命點】：配方專利極度注重實施例與比較例。若獨立項寫得太寬（如 1~99 wt%），而實施例僅有一組且無充分物性數據證明全範圍皆可行，審查官常依第 26 條判定「無法據以實現」或「申請專利範圍未受說明書支持」而直接核駁。"
+    },
+    {
+        "category": "專利法",
+        "article": "專利法 第 58 條",
+        "title": "專利權人之排他專有權限",
+        "keywords": "專利權, 排他權, 製造, 販賣, 進口, 方法專利推定",
+        "text": (
+            "專利權人，除本法另有規定外，專有排除他人未經其同意而製造、為販賣之要約、販賣、使用或為上述目的而進口該發明之權。\n"
+            "物之發明，其專利權範圍不及於以該物為標的所生產之產品。"
+        ),
+        "explanation": "化學配方可同時佈局「物質/組成物（Composition of Matter）」項與「製法（Process）」項，享受物之專利全面排他與方法專利在國內外之邊境查扣效益。"
+    },
+    {
+        "category": "商標法",
+        "article": "商標法 第 18 條",
+        "title": "商標之定義與識別性基本原則",
+        "keywords": "商標, 識別性, 表彰, 商品, 服務",
+        "text": "商標，指任何具有識別性之標識，得以文字、圖形、記號、顏色、立體形狀等組成。",
+        "explanation": "商標為指示商品或服務來源之表彰標識。"
+    },
+    {
+        "category": "商標法",
+        "article": "商標法 第 29 條",
+        "title": "絕對不得註冊事由（描述性用語與通用名稱）",
+        "keywords": "識別性, 描述性, 通用名稱, 產地, 說明",
+        "text": (
+            "商標有下列情形之一，不得註冊：\n"
+            "一、僅由表示商品或服務之形狀、品質、功用、產地或其他特性之說明所構成者。\n"
+            "二、僅由通用標章或通用名稱所構成者。\n"
+            "三、其他不具識別性之標識。"
+        ),
+        "explanation": "直接描述產品功能之文字（如隔熱塗料取名為「超強隔熱」）將因欠缺識別性而遭核駁，除非長期使用取得後天識別性（第二意義）。"
+    },
+    {
+        "category": "商標法",
+        "article": "商標法 第 30 條 第 1 項 第 10 款",
+        "title": "相對不得註冊事由（混淆誤認之虞）",
+        "keywords": "混淆誤認, 相同, 近似, 先申請",
+        "text": "相同或近似於他人同一或類似商品或服務之註冊商標或申請在先之商標，有致相關消費者混淆誤認之虞者，不得註冊。",
+        "explanation": "商標審查之核心條款，依圖樣近似程度、商品類似程度、購買者注意程度綜合評斷。"
     }
 ]
 
@@ -629,6 +739,7 @@ USER_MANUAL_MARKDOWN = """# 📖 智慧財產權整合工作台 操作手冊
 1. **標的拆解**：輸入名稱並點選「✨ Gemini AI 自動拆解」。
 2. **前案比對**：輸入專利號並點擊「📥 爬取並自動填入」。
 3. **表格編輯**：直接於表格內編輯要件與進步性說明。
+4. **法規速查**：Tab 4 提供多維度進階檢索，可按法規體系、實務爭點或關鍵字交叉過濾。
 """
 
 # ==============================================================================
@@ -1113,16 +1224,15 @@ with tab_trade_secret:
     st.subheader("🔐 營業秘密 vs. 專利策略佈局決策矩陣 (Patent vs. Trade Secret Decision Matrix)")
     st.markdown("透過 5 大維度的量化權重指標評估，系統將自動運算並給出最佳保護策略建議。")
 
-    # 新增：快速情境套用按鈕區
     st.markdown("##### ⚡ 快速套用產業情境範本：")
     col_preset1, col_preset2, col_preset_space = st.columns([2, 1.5, 3])
     with col_preset1:
         if st.button("🧪 套用情境：化學塗料 / 液態資材 (如溫室隔熱塗料)", use_container_width=True):
-            st.session_state["ts_score_re"] = 1          # 極易被化驗逆向
-            st.session_state["ts_score_detect"] = 5      # 市售樣品隨手可得，採證極容易
-            st.session_state["ts_score_lifecycle"] = 4   # 穩定生命週期約 5~10 年
-            st.session_state["ts_score_process"] = 2     # 發明點在配方組成物
-            st.session_state["ts_score_protection"] = 3  # 標準化工廠保密水平
+            st.session_state["ts_score_re"] = 1
+            st.session_state["ts_score_detect"] = 5
+            st.session_state["ts_score_lifecycle"] = 4
+            st.session_state["ts_score_process"] = 2
+            st.session_state["ts_score_protection"] = 3
             st.success("✅ 已套用【化學塗料 / 液態資材情境】評估參數！")
             st.rerun()
 
@@ -1174,7 +1284,6 @@ with tab_trade_secret:
             help="1分：無 NDA、無門禁分流；5分：配方拆解代工、核心機密分段隔離、已落實營業秘密資安稽核。"
         )
 
-    # 多準則加權決策公式 (MCDA)
     ts_weighted_score = (score_re * 0.25) + ((6 - score_detect) * 0.25) + (score_lifecycle * 0.15) + (score_process * 0.20) + (score_protection * 0.15)
 
     st.markdown("---")
@@ -1287,11 +1396,112 @@ with tab_trademark:
             )
 
 # ==============================================================================
-# TAB 4: 智財法規速查
+# TAB 4: 智財法規速查 (多維度進階查詢面板升級版)
 # ==============================================================================
 with tab_laws:
     st.subheader("⚖️ 專利法、商標法與營業秘密法 關鍵條文指南")
-    for item in IP_LAWS_DB:
-        with st.expander(f"⚖️ {item['article']}：{item['title']}"):
-            st.code(item["text"], language="text")
-            st.info(item["explanation"])
+    st.markdown("全面收錄台灣**《專利法》**、**《商標法》**與**《營業秘密法》**核心條文、判決要點與官方審查實務指南。")
+
+    # --- 多維度查詢面板 ---
+    with st.container():
+        st.markdown("##### 🔍 多維度法規進階檢索")
+        col_f1, col_f2, col_f3 = st.columns([1.2, 1.3, 2])
+        
+        with col_f1:
+            law_type_filter = st.selectbox(
+                "1. 法規體系：",
+                ["全部法規", "營業秘密法", "專利法", "商標法"],
+                key="law_cat_filter"
+            )
+        
+        with col_f2:
+            issue_filter = st.selectbox(
+                "2. 實務核心爭點：",
+                [
+                    "全部爭點",
+                    "合理保密措施 (門禁/NDA/加密)",
+                    "境外使用加重刑責 (第13-2條)",
+                    "進步性與協同增效 (第22條)",
+                    "數值範圍臨界性 (Criticality)",
+                    "反向工程抗辯 (第10條)",
+                    "說明書充分揭露 (第26條)",
+                    "商標混淆誤認之虞 (第30條)"
+                ],
+                key="law_issue_filter"
+            )
+
+        with col_f3:
+            search_kw = st.text_input(
+                "3. 條文/關鍵字全文檢索：",
+                placeholder="例如：第 2 條、排除侵害、銷毀、事後諸葛、刑事責任",
+                key="law_kw_filter"
+            )
+
+    # --- 多條件交集過濾邏輯 ---
+    filtered_laws = IP_LAWS_DB
+
+    # 1. 法規類別過濾
+    if law_type_filter != "全部法規":
+        filtered_laws = [item for item in filtered_laws if item.get("category") == law_type_filter]
+
+    # 2. 爭點標籤過濾
+    issue_keyword_map = {
+        "合理保密措施 (門禁/NDA/加密)": "合理保密措施",
+        "境外使用加重刑責 (第13-2條)": "境外",
+        "進步性與協同增效 (第22條)": "進步性",
+        "數值範圍臨界性 (Criticality)": "數值限定",
+        "反向工程抗辯 (第10條)": "反向工程",
+        "說明書充分揭露 (第26條)": "可據以實現",
+        "商標混淆誤認之虞 (第30條)": "混淆誤認"
+    }
+    if issue_filter != "全部爭點":
+        target_token = issue_keyword_map.get(issue_filter, "")
+        filtered_laws = [
+            item for item in filtered_laws 
+            if target_token in item.get("keywords", "") or target_token in item.get("explanation", "") or target_token in item.get("text", "")
+        ]
+
+    # 3. 關鍵字模糊搜尋
+    if search_kw.strip():
+        kw = search_kw.strip().lower()
+        filtered_laws = [
+            item for item in filtered_laws
+            if kw in item.get("article", "").lower() 
+            or kw in item.get("title", "").lower() 
+            or kw in item.get("keywords", "").lower() 
+            or kw in item.get("text", "").lower()
+            or kw in item.get("explanation", "").lower()
+        ]
+
+    st.caption(f"📊 檢索結果：共篩選出 **{len(filtered_laws)}** 則相關法條規範")
+
+    if not filtered_laws:
+        st.warning("查無符合條件之法規，請放寬查詢條件或清空關鍵字。")
+    else:
+        for item in filtered_laws:
+            badge_map = {
+                "專利法": "📄 專利法",
+                "商標法": "🏷️ 商標法",
+                "營業秘密法": "🔐 營業秘密法"
+            }
+            badge = badge_map.get(item.get("category"), "⚖️ 法規")
+            expander_title = f"{badge} ｜ {item.get('article')}：{item.get('title')}"
+            
+            with st.expander(expander_title, expanded=True if (search_kw.strip() or issue_filter != "全部爭點") else False):
+                st.markdown(f"**🔍 爭點關鍵字**：`{item.get('keywords', '')}`")
+                st.markdown("##### 📜 法定條文原文：")
+                st.code(item.get("text", ""), language="text")
+                st.markdown("##### 💡 審查實務與爭訟抗辯要點：")
+                st.info(item.get("explanation", ""))
+
+    st.markdown("---")
+    st.markdown("#### 🌐 官方全國法規與司法判決即時檢索系統")
+    col_ext1, col_ext2, col_ext3, col_ext4 = st.columns(4)
+    with col_ext1:
+        st.link_button("📜 《全國法規資料庫》", "https://law.moj.gov.tw/", use_container_width=True)
+    with col_ext2:
+        st.link_button("⚖️ 《司法院裁判書系統》", "https://judgment.judicial.gov.tw/", use_container_width=True)
+    with col_ext3:
+        st.link_button("🏛 《智慧財產局法規審查基準》", "https://www.tipo.gov.tw/", use_container_width=True)
+    with col_ext4:
+        st.link_button("🏢 《智慧財產及商業法院》", "https://ipc.judicial.gov.tw/", use_container_width=True)
